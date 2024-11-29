@@ -30,13 +30,13 @@ impl EigenClient {
         Ok(blob_info)
     }
 
-    async fn dispatch_blob(&self, data: Vec<u8>) -> Result<String, EigenClientError> {
+    pub async fn dispatch_blob(&self, data: Vec<u8>) -> Result<String, EigenClientError> {
         let blob_id = self.client.dispatch_blob(data).await?;
 
         Ok(blob_id)
     }
 
-    async fn get_inclusion_data(&self, blob_id: &str) -> Result<Vec<u8>, EigenClientError> {
+    pub async fn get_inclusion_data(&self, blob_id: &str) -> Result<Vec<u8>, EigenClientError> {
         let blob_info = self.get_commitment(blob_id).await?;
         let rlp_encoded_bytes = hex::decode(blob_info)?;
         let blob_info: BlobInfo = rlp::decode(&rlp_encoded_bytes)?;
@@ -44,7 +44,7 @@ impl EigenClient {
         Ok(inclusion_data)
     }
 
-    fn blob_size_limit(&self) -> Option<usize> {
+    pub fn blob_size_limit(&self) -> Option<usize> {
         Some(RawEigenClient::blob_size_limit())
     }
 }
