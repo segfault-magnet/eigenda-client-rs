@@ -1,20 +1,8 @@
 use std::{str::FromStr, sync::Arc, time::Duration};
 
-use backon::{ConstantBuilder, Retryable};
-use secp256k1::{ecdsa::RecoverableSignature, SecretKey};
-use tokio::{
-    sync::{mpsc, Mutex},
-    time::Instant,
-};
-use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
-use tonic::{
-    transport::{Channel, ClientTlsConfig, Endpoint},
-    Streaming,
-};
-use zksync_config::EigenConfig;
-
 use super::{
     blob_info::BlobInfo,
+    config::EigenConfig,
     disperser::BlobInfo as DisperserBlobInfo,
     eth_client,
     verifier::{Verifier, VerifierConfig},
@@ -27,6 +15,19 @@ use crate::{
         disperser_client::DisperserClient,
         AuthenticatedReply, BlobAuthHeader,
     },
+};
+use backon::{ConstantBuilder, Retryable};
+use byteorder::{BigEndian, ByteOrder};
+use secp256k1::{ecdsa::RecoverableSignature, SecretKey};
+use tiny_keccak::{Hasher, Keccak};
+use tokio::{
+    sync::{mpsc, Mutex},
+    time::Instant,
+};
+use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
+use tonic::{
+    transport::{Channel, ClientTlsConfig, Endpoint},
+    Streaming,
 };
 
 #[derive(Debug, Clone)]
@@ -170,10 +171,6 @@ impl RawEigenClient {
             .await?;
 
         let verification_proof = blob_info.blob_verification_proof.clone();
-        let blob_id = format!(
-            "{}:{}",
-            verification_proof.batch_id, verification_proof.blob_index
-        );
         Ok(hex::encode(rlp::encode(&blob_info)))
     }
 
@@ -202,15 +199,23 @@ impl RawEigenClient {
             .map_err(|e| anyhow::anyhow!("Failed to send DisperseBlobRequest: {}", e))
     }
 
+    fn keccak256(&self, input: &[u8]) -> [u8; 32] {
+        let mut hasher = Keccak::v256();
+        let mut output = [0u8; 32];
+        hasher.update(input);
+        hasher.finalize(&mut output);
+        output
+    }
+
     fn submit_authentication_data(
         &self,
         blob_auth_header: BlobAuthHeader,
         tx: &mpsc::UnboundedSender<disperser::AuthenticatedRequest>,
     ) -> anyhow::Result<()> {
         // TODO: replace challenge_parameter with actual auth header when it is available
-        let digest = zksync_basic_types::web3::keccak256(
-            &blob_auth_header.challenge_parameter.to_be_bytes(),
-        );
+        let mut buf = [0u8; 4];
+        BigEndian::write_u32(&mut buf, blob_auth_header.challenge_parameter);
+        let digest = self.keccak256(&buf);
         let signature: RecoverableSignature = secp256k1::Secp256k1::signing_only()
             .sign_ecdsa_recoverable(
                 &secp256k1::Message::from_slice(&digest[..])?,

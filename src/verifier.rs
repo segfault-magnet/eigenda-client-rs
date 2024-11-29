@@ -1,16 +1,15 @@
-use std::{collections::HashMap, fs::File, io::copy, path::Path};
+use std::{collections::HashMap, fs::File, io::copy, path::Path, str::FromStr};
 
 use ark_bn254::{Fq, G1Affine};
 use bytes::Bytes;
 use ethabi::{encode, Token};
-use ethereum_types::{Address, U256 as ETHU256};
+use ethereum_types::{Address, U256};
 use rust_kzg_bn254::{blob::Blob, kzg::Kzg, polynomial::PolynomialFormat};
 use tiny_keccak::{Hasher, Keccak};
-use zksync_config::configs::da_client::eigen::PointsSource;
-use zksync_types::{H160, U256};
 
 use super::{
     blob_info::{BatchHeader, BlobHeader, BlobInfo, G1Commitment},
+    config::PointsSource,
     eth_client::{EthClient, EthClientError},
     BATCH_ID_TO_METADATA_HASH_FUNCTION_SELECTOR,
     QUORUM_ADVERSARY_THRESHOLD_PERCENTAGES_FUNCTION_SELECTOR,
@@ -38,7 +37,7 @@ pub trait VerifierClient: Sync + Send + std::fmt::Debug {
     fn clone_boxed(&self) -> Box<dyn VerifierClient>;
 
     /// Returns the current block number.
-    async fn get_block_number(&self) -> Result<ETHU256, EthClientError>;
+    async fn get_block_number(&self) -> Result<U256, EthClientError>;
 
     /// Invokes a function on a contract specified by `contract_address` / `contract_abi` using `eth_call`.
     async fn call(
@@ -55,7 +54,7 @@ impl VerifierClient for EthClient {
         Box::new(self.clone())
     }
 
-    async fn get_block_number(&self) -> Result<ETHU256, EthClientError> {
+    async fn get_block_number(&self) -> Result<U256, EthClientError> {
         self.get_block_number().await
     }
 
@@ -332,7 +331,7 @@ impl Verifier {
         let res = self
             .eth_client
             .call(
-                H160::from_str(&self.cfg.svc_manager_addr)
+                Address::from_str(&self.cfg.svc_manager_addr)
                     .map_err(|_| VerificationError::ServiceManagerError)?,
                 bytes::Bytes::copy_from_slice(&data),
                 Some(context_block),
@@ -415,7 +414,7 @@ impl Verifier {
         let res = self
             .eth_client
             .call(
-                H160::from_str(&self.cfg.svc_manager_addr)
+                Address::from_str(&self.cfg.svc_manager_addr)
                     .map_err(|_| VerificationError::ServiceManagerError)?,
                 bytes::Bytes::copy_from_slice(&data),
                 None,
@@ -480,7 +479,7 @@ impl Verifier {
         let res = self
             .eth_client
             .call(
-                H160::from_str(&self.cfg.svc_manager_addr)
+                Address::from_str(&self.cfg.svc_manager_addr)
                     .map_err(|_| VerificationError::ServiceManagerError)?,
                 bytes::Bytes::copy_from_slice(&data),
                 None,
@@ -518,24 +517,23 @@ impl Verifier {
 mod test {
     use std::collections::HashMap;
 
-    use zksync_config::configs::da_client::eigen::PointsSource;
-
     use super::{VerifierConfig, *};
     use crate::blob_info::{
         BatchHeader, BatchMetadata, BlobHeader, BlobInfo, BlobQuorumParam, BlobVerificationProof,
         G1Commitment,
     };
+    use crate::config::PointsSource;
 
     fn get_verifier_config() -> VerifierConfig {
         super::VerifierConfig {
             svc_manager_addr: "0xD4A7E1Bd8015057293f0D0A557088c286942e84b".to_string(),
             max_blob_size: 2 * 1024 * 1024,
-            points: PointsSource::Path("../../../resources".to_string()),
+            points: PointsSource::Path("resources".to_string()),
             settlement_layer_confirmation_depth: 0,
         }
     }
 
-    /// Mock struct for the Verifier
+    /// Mock struct for the Verifierc
     /// Used to avoid making actual calls to a remote disperser
     /// and possible making the CI fail due to network issues.
     /// To run tests with the actual verifier run:
@@ -559,8 +557,8 @@ mod test {
             })
         }
 
-        async fn get_block_number(&self) -> Result<ETHU256, EthClientError> {
-            Ok(ETHU256::from(42))
+        async fn get_block_number(&self) -> Result<U256, EthClientError> {
+            Ok(U256::from(42))
         }
 
         async fn call(

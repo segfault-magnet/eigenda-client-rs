@@ -1,9 +1,11 @@
-use std::{str::FromStr, sync::Arc};
-
+use super::{
+    blob_info::BlobInfo,
+    config::{EigenConfig, EigenSecrets},
+    sdk::RawEigenClient,
+};
 use secp256k1::SecretKey;
-use zksync_config::{configs::da_client::eigen::EigenSecrets, EigenConfig};
-
-use super::{blob_info::BlobInfo, sdk::RawEigenClient, utils::to_retriable_da_error};
+use secrecy::ExposeSecret;
+use std::{str::FromStr, sync::Arc};
 
 /// EigenClient is a client for the Eigen DA service.
 #[derive(Debug, Clone)]
@@ -34,10 +36,7 @@ impl EigenClient {
     }
 
     async fn get_inclusion_data(&self, blob_id: &str) -> anyhow::Result<Vec<u8>> {
-        let blob_info = self
-            .get_commitment(blob_id)
-            .await
-            .map_err(to_retriable_da_error)?;
+        let blob_info = self.get_commitment(blob_id).await?;
         let rlp_encoded_bytes = hex::decode(blob_info)?;
         let blob_info: BlobInfo = rlp::decode(&rlp_encoded_bytes)?;
         let inclusion_data = blob_info.blob_verification_proof.inclusion_proof;
@@ -55,9 +54,8 @@ impl EigenClient {
 /// `cargo test -p zksync_da_clients -- --ignored`
 #[cfg(test)]
 mod tests {
+    use crate::config::{PointsSource, PrivateKey};
     use serial_test::serial;
-    use zksync_config::configs::da_client::eigen::PointsSource;
-    use zksync_types::secrets::PrivateKey;
 
     use super::*;
     use crate::blob_info::BlobInfo;

@@ -30,6 +30,8 @@ backon = "0.4.4"
 tokio = "1"
 async-trait = "0.1"
 hex = "0.4"
+secrecy = "0.8.0"
+byteorder = "1.5.0"
 
 
 
