@@ -6,7 +6,6 @@ mod blob_info;
 mod client;
 mod eth_client;
 mod sdk;
-mod utils;
 mod verifier;
 
 pub use self::client::EigenClient;

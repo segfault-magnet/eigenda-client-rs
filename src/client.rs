@@ -1,14 +1,7 @@
 use std::{str::FromStr, sync::Arc};
 
-use anyhow::anyhow;
-use async_trait::async_trait;
 use secp256k1::SecretKey;
-use subxt_signer::ExposeSecret;
 use zksync_config::{configs::da_client::eigen::EigenSecrets, EigenConfig};
-use zksync_da_client::{
-    types::{DAError, DispatchResponse, InclusionData},
-    DataAvailabilityClient,
-};
 
 use super::{blob_info::BlobInfo, sdk::RawEigenClient, utils::to_retriable_da_error};
 
@@ -33,45 +26,22 @@ impl EigenClient {
         let blob_info = self.client.get_inclusion_data(blob_id).await?;
         Ok(blob_info)
     }
-}
 
-#[async_trait]
-impl DataAvailabilityClient for EigenClient {
-    async fn dispatch_blob(
-        &self,
-        _: u32, // batch number
-        data: Vec<u8>,
-    ) -> Result<DispatchResponse, DAError> {
-        let blob_id = self
-            .client
-            .dispatch_blob(data)
-            .await
-            .map_err(to_retriable_da_error)?;
+    async fn dispatch_blob(&self, data: Vec<u8>) -> anyhow::Result<String> {
+        let blob_id = self.client.dispatch_blob(data).await?;
 
-        Ok(DispatchResponse::from(blob_id))
+        Ok(blob_id)
     }
 
-    async fn get_inclusion_data(&self, blob_id: &str) -> Result<Option<InclusionData>, DAError> {
+    async fn get_inclusion_data(&self, blob_id: &str) -> anyhow::Result<Vec<u8>> {
         let blob_info = self
             .get_commitment(blob_id)
             .await
             .map_err(to_retriable_da_error)?;
-        let rlp_encoded_bytes = hex::decode(blob_info).map_err(|_| DAError {
-            error: anyhow!("Failed to decode blob_id"),
-            is_retriable: false,
-        })?;
-        let blob_info: BlobInfo = rlp::decode(&rlp_encoded_bytes).map_err(|_| DAError {
-            error: anyhow!("Failed to decode blob_info"),
-            is_retriable: false,
-        })?;
+        let rlp_encoded_bytes = hex::decode(blob_info)?;
+        let blob_info: BlobInfo = rlp::decode(&rlp_encoded_bytes)?;
         let inclusion_data = blob_info.blob_verification_proof.inclusion_proof;
-        Ok(Some(InclusionData {
-            data: inclusion_data,
-        }))
-    }
-
-    fn clone_boxed(&self) -> Box<dyn DataAvailabilityClient> {
-        Box::new(self.clone())
+        Ok(inclusion_data)
     }
 
     fn blob_size_limit(&self) -> Option<usize> {
@@ -90,13 +60,10 @@ mod tests {
     use zksync_types::secrets::PrivateKey;
 
     use super::*;
-    use crate::eigen::blob_info::BlobInfo;
+    use crate::blob_info::BlobInfo;
 
     impl EigenClient {
-        pub async fn get_blob_data(
-            &self,
-            blob_id: &str,
-        ) -> anyhow::Result<Option<Vec<u8>>, DAError> {
+        pub async fn get_blob_data(&self, blob_id: &str) -> anyhow::Result<Option<Vec<u8>>> {
             self.client.get_blob_data(blob_id).await
         }
     }
@@ -126,19 +93,14 @@ mod tests {
         };
         let client = EigenClient::new(config, secrets).await.unwrap();
         let data = vec![1; 20];
-        let result = client.dispatch_blob(0, data.clone()).await.unwrap();
+        let blob_id = client.dispatch_blob(data.clone()).await.unwrap();
 
-        let blob_info_str = client.get_commitment(&result.blob_id).await.unwrap();
+        let blob_info_str = client.get_commitment(&blob_id).await.unwrap();
 
         let blob_info: BlobInfo =
             rlp::decode(&hex::decode(blob_info_str.clone()).unwrap()).unwrap();
         let expected_inclusion_data = blob_info.blob_verification_proof.inclusion_proof;
-        let actual_inclusion_data = client
-            .get_inclusion_data(&result.blob_id)
-            .await
-            .unwrap()
-            .unwrap()
-            .data;
+        let actual_inclusion_data = client.get_inclusion_data(&blob_id).await.unwrap();
         assert_eq!(expected_inclusion_data, actual_inclusion_data);
         let retrieved_data = client.get_blob_data(&blob_info_str).await.unwrap();
         assert_eq!(retrieved_data.unwrap(), data);
@@ -169,18 +131,13 @@ mod tests {
         };
         let client = EigenClient::new(config, secrets).await.unwrap();
         let data = vec![1; 20];
-        let result = client.dispatch_blob(0, data.clone()).await.unwrap();
-        let blob_info_str = client.get_commitment(&result.blob_id).await.unwrap();
+        let blob_id = client.dispatch_blob(data.clone()).await.unwrap();
+        let blob_info_str = client.get_commitment(&blob_id).await.unwrap();
 
         let blob_info: BlobInfo =
             rlp::decode(&hex::decode(blob_info_str.clone()).unwrap()).unwrap();
         let expected_inclusion_data = blob_info.blob_verification_proof.inclusion_proof;
-        let actual_inclusion_data = client
-            .get_inclusion_data(&result.blob_id)
-            .await
-            .unwrap()
-            .unwrap()
-            .data;
+        let actual_inclusion_data = client.get_inclusion_data(&blob_id).await.unwrap();
         assert_eq!(expected_inclusion_data, actual_inclusion_data);
         let retrieved_data = client.get_blob_data(&blob_info_str).await.unwrap();
         assert_eq!(retrieved_data.unwrap(), data);
@@ -211,18 +168,13 @@ mod tests {
         };
         let client = EigenClient::new(config, secrets).await.unwrap();
         let data = vec![1; 20];
-        let result = client.dispatch_blob(0, data.clone()).await.unwrap();
-        let blob_info_str = client.get_commitment(&result.blob_id).await.unwrap();
+        let blob_id = client.dispatch_blob(data.clone()).await.unwrap();
+        let blob_info_str = client.get_commitment(&blob_id).await.unwrap();
 
         let blob_info: BlobInfo =
             rlp::decode(&hex::decode(blob_info_str.clone()).unwrap()).unwrap();
         let expected_inclusion_data = blob_info.blob_verification_proof.inclusion_proof;
-        let actual_inclusion_data = client
-            .get_inclusion_data(&result.blob_id)
-            .await
-            .unwrap()
-            .unwrap()
-            .data;
+        let actual_inclusion_data = client.get_inclusion_data(&blob_id).await.unwrap();
         assert_eq!(expected_inclusion_data, actual_inclusion_data);
         let retrieved_data = client.get_blob_data(&blob_info_str).await.unwrap();
         assert_eq!(retrieved_data.unwrap(), data);
@@ -253,18 +205,13 @@ mod tests {
         };
         let client = EigenClient::new(config, secrets).await.unwrap();
         let data = vec![1; 20];
-        let result = client.dispatch_blob(0, data.clone()).await.unwrap();
-        let blob_info_str = client.get_commitment(&result.blob_id).await.unwrap();
+        let blob_id = client.dispatch_blob(data.clone()).await.unwrap();
+        let blob_info_str = client.get_commitment(&blob_id).await.unwrap();
 
         let blob_info: BlobInfo =
             rlp::decode(&hex::decode(blob_info_str.clone()).unwrap()).unwrap();
         let expected_inclusion_data = blob_info.blob_verification_proof.inclusion_proof;
-        let actual_inclusion_data = client
-            .get_inclusion_data(&result.blob_id)
-            .await
-            .unwrap()
-            .unwrap()
-            .data;
+        let actual_inclusion_data = client.get_inclusion_data(&blob_id).await.unwrap();
         assert_eq!(expected_inclusion_data, actual_inclusion_data);
         let retrieved_data = client.get_blob_data(&blob_info_str).await.unwrap();
         assert_eq!(retrieved_data.unwrap(), data);
@@ -295,18 +242,13 @@ mod tests {
         };
         let client = EigenClient::new(config, secrets).await.unwrap();
         let data = vec![1; 20];
-        let result = client.dispatch_blob(0, data.clone()).await.unwrap();
-        let blob_info_str = client.get_commitment(&result.blob_id).await.unwrap();
+        let blob_id = client.dispatch_blob(data.clone()).await.unwrap();
+        let blob_info_str = client.get_commitment(&blob_id).await.unwrap();
 
         let blob_info: BlobInfo =
             rlp::decode(&hex::decode(blob_info_str.clone()).unwrap()).unwrap();
         let expected_inclusion_data = blob_info.blob_verification_proof.inclusion_proof;
-        let actual_inclusion_data = client
-            .get_inclusion_data(&result.blob_id)
-            .await
-            .unwrap()
-            .unwrap()
-            .data;
+        let actual_inclusion_data = client.get_inclusion_data(&blob_id).await.unwrap();
         assert_eq!(expected_inclusion_data, actual_inclusion_data);
         let retrieved_data = client.get_blob_data(&blob_info_str).await.unwrap();
         assert_eq!(retrieved_data.unwrap(), data);

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs::File, io::copy, path::Path, str::FromStr};
+use std::{collections::HashMap, fs::File, io::copy, path::Path};
 
 use ark_bn254::{Fq, G1Affine};
 use bytes::Bytes;
@@ -143,10 +143,7 @@ impl Verifier {
             srs_points_to_load,
             "".to_string(),
         );
-        let kzg = kzg.map_err(|e| {
-            tracing::error!("Failed to setup KZG: {:?}", e);
-            VerificationError::KzgError
-        })?;
+        let kzg = kzg.map_err(|e| VerificationError::KzgError)?;
 
         Ok(Self {
             kzg,
@@ -524,7 +521,7 @@ mod test {
     use zksync_config::configs::da_client::eigen::PointsSource;
 
     use super::{VerifierConfig, *};
-    use crate::eigen::blob_info::{
+    use crate::blob_info::{
         BatchHeader, BatchMetadata, BlobHeader, BlobInfo, BlobQuorumParam, BlobVerificationProof,
         G1Commitment,
     };

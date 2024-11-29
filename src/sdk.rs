@@ -12,7 +12,6 @@ use tonic::{
     Streaming,
 };
 use zksync_config::EigenConfig;
-use zksync_da_client::types::DAError;
 
 use super::{
     blob_info::BlobInfo,
@@ -20,7 +19,7 @@ use super::{
     eth_client,
     verifier::{Verifier, VerifierConfig},
 };
-use crate::eigen::{
+use crate::{
     blob_info,
     disperser::{
         self,
@@ -175,7 +174,6 @@ impl RawEigenClient {
             "{}:{}",
             verification_proof.batch_id, verification_proof.blob_index
         );
-        tracing::info!("Blob dispatch confirmed, blob id: {}", blob_id);
         Ok(hex::encode(rlp::encode(&blob_info)))
     }
 
@@ -312,20 +310,9 @@ impl RawEigenClient {
         Ok(blob_info)
     }
 
-    pub async fn get_blob_data(&self, blob_info: &str) -> anyhow::Result<Option<Vec<u8>>, DAError> {
-        use anyhow::anyhow;
-        use zksync_da_client::types::DAError;
-
-        use crate::eigen::blob_info::BlobInfo;
-
-        let commit = hex::decode(blob_info).map_err(|_| DAError {
-            error: anyhow!("Failed to decode blob_id"),
-            is_retriable: false,
-        })?;
-        let blob_info: BlobInfo = rlp::decode(&commit).map_err(|_| DAError {
-            error: anyhow!("Failed to decode blob_info"),
-            is_retriable: false,
-        })?;
+    pub async fn get_blob_data(&self, blob_info: &str) -> anyhow::Result<Option<Vec<u8>>> {
+        let commit = hex::decode(blob_info)?;
+        let blob_info: BlobInfo = rlp::decode(&commit)?;
         let blob_index = blob_info.blob_verification_proof.blob_index;
         let batch_header_hash = blob_info
             .blob_verification_proof
@@ -339,18 +326,11 @@ impl RawEigenClient {
                 batch_header_hash,
                 blob_index,
             })
-            .await
-            .map_err(|e| DAError {
-                error: anyhow!(e),
-                is_retriable: true,
-            })?
+            .await?
             .into_inner();
 
         if get_response.data.is_empty() {
-            return Err(DAError {
-                error: anyhow!("Failed to get blob data"),
-                is_retriable: false,
-            });
+            return Err(anyhow::anyhow!("Failed to get blob data"));
         }
 
         let data = remove_empty_byte_from_padded_bytes(&get_response.data);
