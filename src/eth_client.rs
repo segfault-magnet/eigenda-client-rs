@@ -5,17 +5,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-#[derive(Debug, thiserror::Error)]
-pub enum EthClientError {
-    #[error("Failed to serialize request body: {0}")]
-    FailedToSerializeRequestBody(String),
-    #[error("reqwest error: {0}")]
-    ReqwestError(#[from] reqwest::Error),
-    #[error("{0}")]
-    SerdeJSONError(#[from] serde_json::Error),
-    #[error("{0}")]
-    RPCError(String),
-}
+use crate::errors::EthClientError;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]

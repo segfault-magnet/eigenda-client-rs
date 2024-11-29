@@ -32,7 +32,3 @@ async-trait = "0.1"
 hex = "0.4"
 secrecy = "0.8.0"
 byteorder = "1.5.0"
-
-
-
-anyhow = "1" #TODO: Remove

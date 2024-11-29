@@ -2,6 +2,8 @@ use std::fmt;
 
 use rlp::{Decodable, DecoderError, Encodable, Rlp, RlpStream};
 
+use crate::errors::ConversionError;
+
 use super::{
     common::G1Commitment as DisperserG1Commitment,
     disperser::{
@@ -11,19 +13,6 @@ use super::{
         BlobVerificationProof as DisperserBlobVerificationProof,
     },
 };
-
-#[derive(Debug)]
-pub enum ConversionError {
-    NotPresentError,
-}
-
-impl fmt::Display for ConversionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ConversionError::NotPresentError => write!(f, "Failed to convert BlobInfo"),
-        }
-    }
-}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct G1Commitment {

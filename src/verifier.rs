@@ -7,31 +7,17 @@ use ethereum_types::{Address, U256};
 use rust_kzg_bn254::{blob::Blob, kzg::Kzg, polynomial::PolynomialFormat};
 use tiny_keccak::{Hasher, Keccak};
 
+use crate::errors::VerificationError;
+
 use super::{
     blob_info::{BatchHeader, BlobHeader, BlobInfo, G1Commitment},
     config::PointsSource,
-    eth_client::{EthClient, EthClientError},
+    errors::EthClientError,
+    eth_client::EthClient,
     BATCH_ID_TO_METADATA_HASH_FUNCTION_SELECTOR,
     QUORUM_ADVERSARY_THRESHOLD_PERCENTAGES_FUNCTION_SELECTOR,
     QUORUM_NUMBERS_REQUIRED_FUNCTION_SELECTOR,
 };
-
-#[derive(Debug)]
-pub enum VerificationError {
-    ServiceManagerError,
-    KzgError,
-    WrongProof,
-    DifferentCommitments,
-    DifferentRoots,
-    EmptyHash,
-    DifferentHashes,
-    WrongQuorumParams,
-    QuorumNotConfirmed,
-    CommitmentNotOnCurve,
-    CommitmentNotOnCorrectSubgroup,
-    LinkError,
-}
-
 #[async_trait::async_trait]
 pub trait VerifierClient: Sync + Send + std::fmt::Debug {
     fn clone_boxed(&self) -> Box<dyn VerifierClient>;

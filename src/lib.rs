@@ -5,6 +5,7 @@ pub const QUORUM_NUMBERS_REQUIRED_FUNCTION_SELECTOR: [u8; 4] = [225, 82, 52, 255
 mod blob_info;
 mod client;
 mod config;
+mod errors;
 mod eth_client;
 mod sdk;
 mod verifier;

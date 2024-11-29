@@ -1,6 +1,8 @@
 use secrecy::{ExposeSecret, Secret};
 use std::str::FromStr;
 
+use crate::errors::EigenClientError;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum PointsSource {
     Path(String),
@@ -56,9 +58,11 @@ impl PartialEq for PrivateKey {
 }
 
 impl FromStr for PrivateKey {
-    type Err = anyhow::Error;
+    type Err = EigenClientError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(PrivateKey(s.parse()?))
+        Ok(PrivateKey(
+            s.parse().map_err(|_| EigenClientError::PrivateKeyError)?,
+        ))
     }
 }
