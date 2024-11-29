@@ -173,7 +173,6 @@ impl RawEigenClient {
         self.perform_verification(blob_info.clone(), disperse_elapsed)
             .await?;
 
-        let verification_proof = blob_info.blob_verification_proof.clone();
         Ok(hex::encode(rlp::encode(&blob_info)))
     }
 

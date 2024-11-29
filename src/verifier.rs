@@ -128,7 +128,7 @@ impl Verifier {
             srs_points_to_load,
             "".to_string(),
         );
-        let kzg = kzg.map_err(|e| VerificationError::KzgError)?;
+        let kzg = kzg.map_err(|_| VerificationError::KzgError)?;
 
         Ok(Self {
             kzg,
