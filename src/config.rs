@@ -62,7 +62,7 @@ impl FromStr for PrivateKey {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(PrivateKey(
-            s.parse().map_err(|_| EigenClientError::PrivateKeyError)?,
+            s.parse().map_err(|_| EigenClientError::PrivateKey)?,
         ))
     }
 }

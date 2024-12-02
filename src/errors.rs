@@ -3,19 +3,19 @@ use tonic::{transport::Error as TonicError, Status};
 #[derive(Debug, thiserror::Error)]
 pub enum EigenClientError {
     #[error(transparent)]
-    EthClientError(#[from] EthClientError),
+    EthClient(#[from] EthClientError),
     #[error(transparent)]
-    VerificationError(#[from] VerificationError),
+    Verification(#[from] VerificationError),
     #[error("Private Key Error")]
-    PrivateKeyError,
+    PrivateKey,
     #[error(transparent)]
-    SecpError(#[from] secp256k1::Error),
+    Secp(#[from] secp256k1::Error),
     #[error(transparent)]
-    HexError(#[from] hex::FromHexError),
+    Hex(#[from] hex::FromHexError),
     #[error(transparent)]
-    RlpError(#[from] rlp::DecoderError),
+    Rlp(#[from] rlp::DecoderError),
     #[error(transparent)]
-    TonicError(#[from] TonicError),
+    Tonic(#[from] TonicError),
     #[error(transparent)]
     Status(#[from] Status),
     #[error("No response from server")]
@@ -27,9 +27,9 @@ pub enum EigenClientError {
     #[error("Failed to get blob data")]
     FailedToGetBlobData,
     #[error("Failed to send DisperseBlobRequest: {0}")]
-    DisperseBlobError(String),
+    DisperseBlob(String),
     #[error("Failed to send AuthenticationData: {0}")]
-    AuthenticationDataError(String),
+    AuthenticationData(String),
     #[error("Error from server: {0}")]
     ErrorFromServer(String),
     #[error("Blob still processing")]
@@ -43,35 +43,35 @@ pub enum EigenClientError {
     #[error("Received unknown blob status")]
     ReceivedUnknownBlobStatus,
     #[error(transparent)]
-    ConversionError(#[from] ConversionError),
+    Conversion(#[from] ConversionError),
     #[error(transparent)]
-    ProstError(#[from] prost::DecodeError),
+    Prost(#[from] prost::DecodeError),
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConversionError {
-    #[error("Failed to convert BlobInfo")]
-    NotPresentError,
+    #[error("Failed to convert {0}")]
+    NotPresent(String),
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum EthClientError {
     #[error("Failed to serialize request body: {0}")]
     FailedToSerializeRequestBody(String),
-    #[error("reqwest error: {0}")]
-    ReqwestError(#[from] reqwest::Error),
     #[error(transparent)]
-    SerdeJSONError(#[from] serde_json::Error),
-    #[error("{0}")]
-    RPCError(String),
+    HTTPClient(#[from] reqwest::Error),
+    #[error(transparent)]
+    SerdeJSON(#[from] serde_json::Error),
+    #[error("RPC: {0}")]
+    RPC(String),
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
-    #[error("Service Manager Error")]
-    ServiceManagerError,
-    #[error("Kzg Error")]
-    KzgError,
+    #[error("Service Manager Error: {0}")]
+    ServiceManager(String),
+    #[error("Kzg Error: {0}")]
+    Kzg(String),
     #[error("Wrong proof")]
     WrongProof,
     #[error("Different commitments")]
@@ -90,6 +90,6 @@ pub enum VerificationError {
     CommitmentNotOnCurve,
     #[error("Commitment not on correct subgroup")]
     CommitmentNotOnCorrectSubgroup,
-    #[error("Link Error")]
-    LinkError,
+    #[error("Link Error: {0}")]
+    Link(String),
 }

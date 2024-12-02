@@ -89,10 +89,10 @@ impl EthClient {
 
         match self.send_request(request).await {
             Ok(RpcResponse::Success(result)) => {
-                serde_json::from_value(result.result).map_err(EthClientError::SerdeJSONError)
+                serde_json::from_value(result.result).map_err(EthClientError::SerdeJSON)
             }
             Ok(RpcResponse::Error(error_response)) => {
-                Err(EthClientError::RPCError(error_response.error.message))
+                Err(EthClientError::RPC(error_response.error.message))
             }
             Err(error) => Err(error),
         }
@@ -124,10 +124,10 @@ impl EthClient {
 
         match self.send_request(request).await {
             Ok(RpcResponse::Success(result)) => {
-                serde_json::from_value(result.result).map_err(EthClientError::SerdeJSONError)
+                serde_json::from_value(result.result).map_err(EthClientError::SerdeJSON)
             }
             Ok(RpcResponse::Error(error_response)) => {
-                Err(EthClientError::RPCError(error_response.error.message))
+                Err(EthClientError::RPC(error_response.error.message))
             }
             Err(error) => Err(error),
         }

@@ -118,7 +118,7 @@ impl TryFrom<DisperserBlobHeader> for BlobHeader {
     type Error = ConversionError;
     fn try_from(value: DisperserBlobHeader) -> Result<Self, Self::Error> {
         if value.commitment.is_none() {
-            return Err(ConversionError::NotPresentError);
+            return Err(ConversionError::NotPresent("BlobHeader".to_string()));
         }
         let blob_quorum_params: Vec<BlobQuorumParam> = value
             .blob_quorum_params
@@ -211,7 +211,7 @@ impl TryFrom<DisperserBatchMetadata> for BatchMetadata {
     type Error = ConversionError;
     fn try_from(value: DisperserBatchMetadata) -> Result<Self, Self::Error> {
         if value.batch_header.is_none() {
-            return Err(ConversionError::NotPresentError);
+            return Err(ConversionError::NotPresent("BatchMetadata".to_string()));
         }
         Ok(Self {
             batch_header: BatchHeader::from(value.batch_header.unwrap()),
@@ -259,7 +259,9 @@ impl TryFrom<DisperserBlobVerificationProof> for BlobVerificationProof {
     type Error = ConversionError;
     fn try_from(value: DisperserBlobVerificationProof) -> Result<Self, Self::Error> {
         if value.batch_metadata.is_none() {
-            return Err(ConversionError::NotPresentError);
+            return Err(ConversionError::NotPresent(
+                "BlobVerificationProof".to_string(),
+            ));
         }
         Ok(Self {
             batch_id: value.batch_id,
@@ -301,7 +303,7 @@ impl TryFrom<DisperserBlobInfo> for BlobInfo {
     type Error = ConversionError;
     fn try_from(value: DisperserBlobInfo) -> Result<Self, Self::Error> {
         if value.blob_header.is_none() || value.blob_verification_proof.is_none() {
-            return Err(ConversionError::NotPresentError);
+            return Err(ConversionError::NotPresent("BlobInfo".to_string()));
         }
         Ok(Self {
             blob_header: BlobHeader::try_from(value.blob_header.unwrap())?,

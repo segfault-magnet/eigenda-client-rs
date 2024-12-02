@@ -198,7 +198,7 @@ impl RawEigenClient {
         };
 
         tx.send(req)
-            .map_err(|e| EigenClientError::DisperseBlobError(format!("{}", e)))
+            .map_err(|e| EigenClientError::DisperseBlob(format!("{}", e)))
     }
 
     fn keccak256(&self, input: &[u8]) -> [u8; 32] {
@@ -236,7 +236,7 @@ impl RawEigenClient {
         };
 
         tx.send(req)
-            .map_err(|e| EigenClientError::AuthenticationDataError(format!("{}", e)))
+            .map_err(|e| EigenClientError::AuthenticationData(format!("{}", e)))
     }
 
     async fn receive_blob_auth_header(
@@ -314,7 +314,10 @@ impl RawEigenClient {
                     (self.config.status_query_timeout / self.config.status_query_interval) as usize,
                 ),
         )
-        .when(|e| e.to_string().contains("Blob is still processing"))
+        .when(|e| match e {
+            EigenClientError::BlobStillProcessing => true,
+            _ => false,
+        })
         .await?;
 
         Ok(blob_info)

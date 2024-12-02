@@ -88,26 +88,28 @@ impl Verifier {
         let url_g1 = format!("{}{}", link, "/g1.point");
         let response = reqwest::get(url_g1)
             .await
-            .map_err(|_| VerificationError::LinkError)?;
+            .map_err(|e| VerificationError::Link(e.to_string()))?;
         let path = Path::new("./g1.point");
-        let mut file = File::create(path).map_err(|_| VerificationError::LinkError)?;
+        let mut file = File::create(path).map_err(|e| VerificationError::Link(e.to_string()))?;
         let content = response
             .bytes()
             .await
-            .map_err(|_| VerificationError::LinkError)?;
-        copy(&mut content.as_ref(), &mut file).map_err(|_| VerificationError::LinkError)?;
+            .map_err(|e| VerificationError::Link(e.to_string()))?;
+        copy(&mut content.as_ref(), &mut file)
+            .map_err(|e| VerificationError::Link(e.to_string()))?;
 
         let url_g2 = format!("{}{}", link, "/g2.point.powerOf2");
         let response = reqwest::get(url_g2)
             .await
-            .map_err(|_| VerificationError::LinkError)?;
+            .map_err(|e| VerificationError::Link(e.to_string()))?;
         let path = Path::new("./g2.point.powerOf2");
-        let mut file = File::create(path).map_err(|_| VerificationError::LinkError)?;
+        let mut file = File::create(path).map_err(|e| VerificationError::Link(e.to_string()))?;
         let content = response
             .bytes()
             .await
-            .map_err(|_| VerificationError::LinkError)?;
-        copy(&mut content.as_ref(), &mut file).map_err(|_| VerificationError::LinkError)?;
+            .map_err(|e| VerificationError::Link(e.to_string()))?;
+        copy(&mut content.as_ref(), &mut file)
+            .map_err(|e| VerificationError::Link(e.to_string()))?;
 
         Ok(".".to_string())
     }
@@ -128,7 +130,7 @@ impl Verifier {
             srs_points_to_load,
             "".to_string(),
         );
-        let kzg = kzg.map_err(|_| VerificationError::KzgError)?;
+        let kzg = kzg.map_err(|e| VerificationError::Kzg(e.to_string()))?;
 
         Ok(Self {
             kzg,
@@ -142,7 +144,7 @@ impl Verifier {
         let blob = Blob::from_bytes_and_pad(&blob.to_vec());
         self.kzg
             .blob_to_kzg_commitment(&blob, PolynomialFormat::InEvaluationForm)
-            .map_err(|_| VerificationError::KzgError)
+            .map_err(|e| VerificationError::Kzg(e.to_string()))
     }
 
     /// Compare the given commitment with the commitment generated with the blob
@@ -318,15 +320,16 @@ impl Verifier {
             .eth_client
             .call(
                 Address::from_str(&self.cfg.svc_manager_addr)
-                    .map_err(|_| VerificationError::ServiceManagerError)?,
+                    .map_err(|e| VerificationError::ServiceManager(e.to_string()))?,
                 bytes::Bytes::copy_from_slice(&data),
                 Some(context_block),
             )
             .await
-            .map_err(|_| VerificationError::ServiceManagerError)?;
+            .map_err(|e| VerificationError::ServiceManager(e.to_string()))?;
 
         let res = res.trim_start_matches("0x");
-        let expected_hash = hex::decode(res).map_err(|_| VerificationError::ServiceManagerError)?;
+        let expected_hash =
+            hex::decode(res).map_err(|e| VerificationError::ServiceManager(e.to_string()))?;
 
         if expected_hash == vec![0u8; 32] {
             return Err(VerificationError::EmptyHash);
@@ -401,21 +404,21 @@ impl Verifier {
             .eth_client
             .call(
                 Address::from_str(&self.cfg.svc_manager_addr)
-                    .map_err(|_| VerificationError::ServiceManagerError)?,
+                    .map_err(|e| VerificationError::ServiceManager(e.to_string()))?,
                 bytes::Bytes::copy_from_slice(&data),
                 None,
             )
             .await
-            .map_err(|_| VerificationError::ServiceManagerError)?;
+            .map_err(|e| VerificationError::ServiceManager(e.to_string()))?;
 
         let res = res.trim_start_matches("0x");
 
         let percentages_vec =
-            hex::decode(res).map_err(|_| VerificationError::ServiceManagerError)?;
+            hex::decode(res).map_err(|e| VerificationError::ServiceManager(e.to_string()))?;
 
         let percentages = self
             .decode_bytes(percentages_vec)
-            .map_err(|_| VerificationError::ServiceManagerError)?;
+            .map_err(|e| VerificationError::ServiceManager(e.to_string()))?;
 
         if percentages.len() > quorum_number as usize {
             return Ok(percentages[quorum_number as usize]);
@@ -466,21 +469,21 @@ impl Verifier {
             .eth_client
             .call(
                 Address::from_str(&self.cfg.svc_manager_addr)
-                    .map_err(|_| VerificationError::ServiceManagerError)?,
+                    .map_err(|e| VerificationError::ServiceManager(e.to_string()))?,
                 bytes::Bytes::copy_from_slice(&data),
                 None,
             )
             .await
-            .map_err(|_| VerificationError::ServiceManagerError)?;
+            .map_err(|e| VerificationError::ServiceManager(e.to_string()))?;
 
         let res = res.trim_start_matches("0x");
 
         let required_quorums_vec =
-            hex::decode(res).map_err(|_| VerificationError::ServiceManagerError)?;
+            hex::decode(res).map_err(|e| VerificationError::ServiceManager(e.to_string()))?;
 
         let required_quorums = self
             .decode_bytes(required_quorums_vec)
-            .map_err(|_| VerificationError::ServiceManagerError)?;
+            .map_err(|e| VerificationError::ServiceManager(e.to_string()))?;
 
         for quorum in required_quorums {
             if !confirmed_quorums.contains_key(&(quorum as u32)) {
