@@ -46,6 +46,14 @@ pub enum EigenClientError {
     Conversion(#[from] ConversionError),
     #[error(transparent)]
     Prost(#[from] prost::DecodeError),
+    #[error("Data provided does not match the expected data")]
+    DataMismatch,
+    #[error("Failed to verify inclusion data")]
+    InclusionData,
+    #[error("Failed to get blob data")]
+    GetBlobData,
+    #[error("Failed at get blob function {0}")]
+    GetBlobFunction(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
 #[derive(Debug, thiserror::Error)]

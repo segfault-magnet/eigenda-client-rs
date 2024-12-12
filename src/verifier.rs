@@ -102,7 +102,8 @@ impl Verifier {
             .bytes()
             .await
             .map_err(|e| VerificationError::Link(e.to_string()))?;
-        copy(&mut content.as_ref(), &mut file).map_err(|e| VerificationError::Link(e.to_string()))?;
+        copy(&mut content.as_ref(), &mut file)
+            .map_err(|e| VerificationError::Link(e.to_string()))?;
         Ok(())
     }
     async fn save_points(url_g1: String, url_g2: String) -> Result<String, VerificationError> {
@@ -344,11 +345,16 @@ impl Verifier {
         }
 
         let actual_hash = self.hash_batch_metadata(
-            blob_info.blob_verification_proof.batch_medatada.batch_header,
-            blob_info.blob_verification_proof
+            blob_info
+                .blob_verification_proof
+                .batch_medatada
+                .batch_header,
+            blob_info
+                .blob_verification_proof
                 .batch_medatada
                 .signatory_record_hash,
-            blob_info.blob_verification_proof
+            blob_info
+                .blob_verification_proof
                 .batch_medatada
                 .confirmation_block_number,
         );
@@ -456,7 +462,6 @@ impl Verifier {
         let required_quorums = self
             .decode_bytes(required_quorums_vec)
             .map_err(|e| VerificationError::ServiceManager(e.to_string()))?;
-        
 
         Ok(required_quorums)
     }
@@ -508,7 +513,10 @@ impl Verifier {
     }
 
     /// Verifies that the certificate is valid
-    pub async fn verify_inclusion_data_against_settlement_layer(&self, cert: BlobInfo) -> Result<(), VerificationError> {
+    pub async fn verify_inclusion_data_against_settlement_layer(
+        &self,
+        cert: BlobInfo,
+    ) -> Result<(), VerificationError> {
         self.verify_batch(cert.clone()).await?;
         self.verify_merkle_proof(cert.clone())?;
         self.verify_security_params(cert.clone()).await?;

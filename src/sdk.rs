@@ -1,4 +1,4 @@
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{str::FromStr, sync::Arc};
 
 use super::{
     blob_info::BlobInfo,
@@ -9,22 +9,19 @@ use super::{
 };
 use crate::{
     blob_info,
+    client::GetBlobData,
     disperser::{
         self,
         authenticated_request::Payload::{AuthenticationData, DisperseRequest},
         disperser_client::DisperserClient,
         AuthenticatedReply, BlobAuthHeader,
     },
-    errors::EigenClientError,
+    errors::{EigenClientError, VerificationError},
 };
-use backon::{ConstantBuilder, Retryable};
 use byteorder::{BigEndian, ByteOrder};
 use secp256k1::{ecdsa::RecoverableSignature, SecretKey};
 use tiny_keccak::{Hasher, Keccak};
-use tokio::{
-    sync::{mpsc, Mutex},
-    time::Instant,
-};
+use tokio::sync::{mpsc, Mutex};
 use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
 use tonic::{
     transport::{Channel, ClientTlsConfig, Endpoint},
@@ -32,22 +29,23 @@ use tonic::{
 };
 
 #[derive(Debug, Clone)]
-pub(crate) struct RawEigenClient {
+pub(crate) struct RawEigenClient<T: GetBlobData> {
     client: Arc<Mutex<DisperserClient<Channel>>>,
     private_key: SecretKey,
     pub config: EigenConfig,
     verifier: Verifier,
+    get_blob_data: Box<T>,
 }
 
 pub(crate) const DATA_CHUNK_SIZE: usize = 32;
-pub(crate) const AVG_BLOCK_TIME: u64 = 12;
 
-impl RawEigenClient {
+impl<T: GetBlobData> RawEigenClient<T> {
     const BLOB_SIZE_LIMIT: usize = 1024 * 1024 * 2; // 2 MB
 
     pub async fn new(
         private_key: SecretKey,
         config: EigenConfig,
+        get_blob_data: Box<T>,
     ) -> Result<Self, EigenClientError> {
         let endpoint =
             Endpoint::from_str(config.disperser_rpc.as_str())?.tls_config(ClientTlsConfig::new())?;
@@ -56,7 +54,8 @@ impl RawEigenClient {
         let verifier_config = VerifierConfig {
             svc_manager_addr: config.eigenda_svc_manager_address.clone(),
             max_blob_size: Self::BLOB_SIZE_LIMIT as u32,
-            points: config.points_source.clone(),
+            g1_url: config.g1_url.clone(),
+            g2_url: config.g2_url.clone(),
             settlement_layer_confirmation_depth: config.settlement_layer_confirmation_depth.max(0)
                 as u32,
         };
@@ -68,6 +67,7 @@ impl RawEigenClient {
             private_key,
             config,
             verifier,
+            get_blob_data,
         })
     }
 
@@ -94,26 +94,16 @@ impl RawEigenClient {
             .await?
             .into_inner();
 
-        Ok(hex::encode(disperse_reply.request_id))
-    }
+        match disperser::BlobStatus::try_from(disperse_reply.result)? {
+            disperser::BlobStatus::Failed
+            | disperser::BlobStatus::InsufficientSignatures
+            | disperser::BlobStatus::Unknown => Err(EigenClientError::BlobDispatchedFailed),
 
-    async fn perform_verification(
-        &self,
-        blob_info: BlobInfo,
-        disperse_elapsed: Duration,
-    ) -> Result<(), EigenClientError> {
-        (|| async { self.verifier.verify_certificate(blob_info.clone()).await })
-            .retry(
-                &ConstantBuilder::default()
-                    .with_delay(Duration::from_secs(AVG_BLOCK_TIME))
-                    .with_max_times(
-                        (self.config.status_query_timeout
-                            - disperse_elapsed.as_millis() as u64 / AVG_BLOCK_TIME)
-                            as usize,
-                    ),
-            )
-            .await
-            .map_err(EigenClientError::from)
+            disperser::BlobStatus::Dispersing
+            | disperser::BlobStatus::Processing
+            | disperser::BlobStatus::Finalized
+            | disperser::BlobStatus::Confirmed => Ok(hex::encode(disperse_reply.request_id)),
+        }
     }
 
     async fn dispatch_blob_authenticated(&self, data: Vec<u8>) -> Result<String, EigenClientError> {
@@ -151,29 +141,65 @@ impl RawEigenClient {
         let disperser::authenticated_reply::Payload::DisperseReply(disperse_reply) = reply else {
             return Err(EigenClientError::UnexpectedResponseFromServer);
         };
-        Ok(hex::encode(disperse_reply.request_id))
+
+        match disperser::BlobStatus::try_from(disperse_reply.result)? {
+            disperser::BlobStatus::Failed
+            | disperser::BlobStatus::InsufficientSignatures
+            | disperser::BlobStatus::Unknown => Err(EigenClientError::BlobDispatchedFailed),
+
+            disperser::BlobStatus::Dispersing
+            | disperser::BlobStatus::Processing
+            | disperser::BlobStatus::Finalized
+            | disperser::BlobStatus::Confirmed => Ok(hex::encode(disperse_reply.request_id)),
+        }
     }
 
-    pub async fn get_inclusion_data(&self, blob_id: &str) -> Result<String, EigenClientError> {
-        let disperse_time = Instant::now();
-        let blob_info = self.await_for_inclusion(blob_id.to_string()).await?;
+    pub async fn get_commitment(
+        &self,
+        request_id: &str,
+    ) -> Result<Option<BlobInfo>, EigenClientError> {
+        let blob_info = self.try_get_inclusion_data(request_id.to_string()).await?;
 
+        let Some(blob_info) = blob_info else {
+            return Ok(None);
+        };
         let blob_info = blob_info::BlobInfo::try_from(blob_info)?;
-
-        let disperse_elapsed = Instant::now() - disperse_time;
-        let data = self
-            .get_blob_data(&hex::encode(rlp::encode(&blob_info)))
-            .await?;
-        if data.is_none() {
+        let Some(data) = self.get_blob_data(blob_info.clone()).await? else {
             return Err(EigenClientError::FailedToGetBlobData);
+        };
+
+        let data_db = self.get_blob_data.call(request_id).await?;
+        if let Some(data_db) = data_db {
+            if data_db != data {
+                return Err(EigenClientError::DataMismatch);
+            }
         }
         self.verifier
-            .verify_commitment(blob_info.blob_header.commitment.clone(), data.unwrap())?;
+            .verify_commitment(blob_info.blob_header.commitment.clone(), data)?;
 
-        self.perform_verification(blob_info.clone(), disperse_elapsed)
-            .await?;
+        let result = self
+            .verifier
+            .verify_inclusion_data_against_settlement_layer(blob_info.clone())
+            .await;
+        if let Err(e) = result {
+            match e {
+                VerificationError::EmptyHash => return Ok(None),
+                _ => return Err(EigenClientError::InclusionData),
+            }
+        }
+        Ok(Some(blob_info))
+    }
 
-        Ok(hex::encode(rlp::encode(&blob_info)))
+    pub async fn get_inclusion_data(
+        &self,
+        request_id: &str,
+    ) -> Result<Option<Vec<u8>>, EigenClientError> {
+        let blob_info = self.get_commitment(request_id).await?;
+        if let Some(blob_info) = blob_info {
+            Ok(Some(blob_info.blob_verification_proof.inclusion_proof))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn dispatch_blob(&self, data: Vec<u8>) -> Result<String, EigenClientError> {
@@ -263,72 +289,52 @@ impl RawEigenClient {
         }
     }
 
-    async fn await_for_inclusion(
+    async fn try_get_inclusion_data(
         &self,
         request_id: String,
-    ) -> Result<DisperserBlobInfo, EigenClientError> {
+    ) -> Result<Option<DisperserBlobInfo>, EigenClientError> {
         let polling_request = disperser::BlobStatusRequest {
             request_id: hex::decode(request_id)?,
         };
 
-        let blob_info = (|| async {
-            let resp = self
-                .client
-                .lock()
-                .await
-                .get_blob_status(polling_request.clone())
-                .await?
-                .into_inner();
+        let resp = self
+            .client
+            .lock()
+            .await
+            .get_blob_status(polling_request.clone())
+            .await?
+            .into_inner();
 
-            match disperser::BlobStatus::try_from(resp.status)? {
-                disperser::BlobStatus::Processing | disperser::BlobStatus::Dispersing => {
-                    Err(EigenClientError::BlobStillProcessing)
-                }
-                disperser::BlobStatus::Failed => Err(EigenClientError::BlobDispatchedFailed),
-                disperser::BlobStatus::InsufficientSignatures => {
-                    Err(EigenClientError::InsufficientSignatures)
-                }
-                disperser::BlobStatus::Confirmed => {
-                    if !self.config.wait_for_finalization {
-                        let blob_info = resp
-                            .info
-                            .ok_or_else(|| EigenClientError::NoBlobHeaderInResponse)?;
-                        return Ok(blob_info);
-                    }
-                    Err(EigenClientError::BlobStillProcessing)
-                }
-                disperser::BlobStatus::Finalized => {
+        match disperser::BlobStatus::try_from(resp.status)? {
+            disperser::BlobStatus::Processing | disperser::BlobStatus::Dispersing => Ok(None),
+            disperser::BlobStatus::Failed => Err(EigenClientError::BlobDispatchedFailed),
+            disperser::BlobStatus::InsufficientSignatures => {
+                Err(EigenClientError::InsufficientSignatures)
+            }
+            disperser::BlobStatus::Confirmed => {
+                if !self.config.wait_for_finalization {
                     let blob_info = resp
                         .info
                         .ok_or_else(|| EigenClientError::NoBlobHeaderInResponse)?;
-                    Ok(blob_info)
+                    return Ok(Some(blob_info));
                 }
-
-                _ => Err(EigenClientError::ReceivedUnknownBlobStatus),
+                Ok(None)
             }
-        })
-        .retry(
-            &ConstantBuilder::default()
-                .with_delay(Duration::from_millis(self.config.status_query_interval))
-                .with_max_times(
-                    (self.config.status_query_timeout / self.config.status_query_interval) as usize,
-                ),
-        )
-        .when(|e| match e {
-            EigenClientError::BlobStillProcessing => true,
-            _ => false,
-        })
-        .await?;
+            disperser::BlobStatus::Finalized => {
+                let blob_info = resp
+                    .info
+                    .ok_or_else(|| EigenClientError::NoBlobHeaderInResponse)?;
+                Ok(Some(blob_info))
+            }
 
-        Ok(blob_info)
+            _ => Err(EigenClientError::ReceivedUnknownBlobStatus),
+        }
     }
 
     pub async fn get_blob_data(
         &self,
-        blob_info: &str,
+        blob_info: BlobInfo,
     ) -> Result<Option<Vec<u8>>, EigenClientError> {
-        let commit = hex::decode(blob_info)?;
-        let blob_info: BlobInfo = rlp::decode(&commit)?;
         let blob_index = blob_info.blob_verification_proof.blob_index;
         let batch_header_hash = blob_info
             .blob_verification_proof

@@ -4,11 +4,13 @@ pub const QUORUM_NUMBERS_REQUIRED_FUNCTION_SELECTOR: [u8; 4] = [225, 82, 52, 255
 
 pub mod blob_info;
 pub mod client;
+pub mod client_tests;
 pub mod config;
 pub mod errors;
 pub mod eth_client;
 pub mod sdk;
 pub mod verifier;
+pub mod verifier_tests;
 
 pub use self::client::EigenClient;
 
