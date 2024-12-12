@@ -13,8 +13,6 @@ pub enum EigenClientError {
     #[error(transparent)]
     Hex(#[from] hex::FromHexError),
     #[error(transparent)]
-    Rlp(#[from] rlp::DecoderError),
-    #[error(transparent)]
     Tonic(#[from] TonicError),
     #[error(transparent)]
     Status(#[from] Status),
