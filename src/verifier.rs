@@ -119,9 +119,9 @@ impl Verifier {
         let srs_points_to_load = cfg.max_blob_size / Self::POINT_SIZE;
         let path = Self::save_points(cfg.clone().g1_url, cfg.clone().g2_url).await?;
         let kzg = Kzg::setup(
-            &format!("{}{}", path, Self::G1POINT),
+            &format!("{}/{}", path, Self::G1POINT),
             "",
-            &format!("{}{}", path, Self::G2POINT),
+            &format!("{}/{}", path, Self::G2POINT),
             Self::SRSORDER,
             srs_points_to_load,
             "".to_string(),

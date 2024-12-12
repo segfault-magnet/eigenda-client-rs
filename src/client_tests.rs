@@ -52,7 +52,7 @@ mod tests {
                 .with_delay(Duration::from_millis(STATUS_QUERY_INTERVAL))
                 .with_max_times((STATUS_QUERY_TIMEOUT / STATUS_QUERY_INTERVAL) as usize),
         )
-        .when(|e| e.to_string().contains("Blob not found"))
+        .when(|e| matches!(e, EigenClientError::FailedToGetBlobData))
         .await?;
 
         Ok(blob_info)
