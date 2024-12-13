@@ -10,6 +10,9 @@ use secrecy::ExposeSecret;
 use std::error::Error;
 use std::{str::FromStr, sync::Arc};
 
+/// This trait provides a method call which given the blob id, returns the blob data or None
+/// It you don't need to use it, just return None and it would be as if it didn't exist
+/// It can be used as extra verification if you also store the blob yourself
 #[async_trait]
 pub trait GetBlobData: Clone + std::fmt::Debug + Send + Sync {
     async fn call(&self, input: &str) -> Result<Option<Vec<u8>>, Box<dyn Error + Send + Sync>>;
