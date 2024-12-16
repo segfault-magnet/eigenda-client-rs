@@ -18,14 +18,14 @@ mod tests {
     use crate::blob_info::BlobInfo;
 
     impl<T: GetBlobData> EigenClient<T> {
-        pub async fn get_blob_data(
+        pub(crate) async fn get_blob_data(
             &self,
             blob_id: BlobInfo,
         ) -> Result<Option<Vec<u8>>, EigenClientError> {
             self.client.get_blob_data(blob_id).await
         }
 
-        pub async fn get_commitment(
+        pub(crate) async fn get_commitment(
             &self,
             blob_id: &str,
         ) -> Result<Option<BlobInfo>, EigenClientError> {

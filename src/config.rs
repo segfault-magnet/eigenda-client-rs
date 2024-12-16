@@ -3,18 +3,6 @@ use std::str::FromStr;
 
 use crate::errors::EigenClientError;
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum PointsSource {
-    Path(String),
-    Link(String),
-}
-
-impl Default for PointsSource {
-    fn default() -> Self {
-        PointsSource::Path("".to_string())
-    }
-}
-
 /// Configuration for the EigenDA remote disperser client.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct EigenConfig {

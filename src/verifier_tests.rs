@@ -28,12 +28,12 @@ mod test {
     /// To run tests with the actual verifier run:
     /// `cargo test -p zksync_da_clients -- --ignored`
     #[derive(Debug)]
-    pub struct MockVerifierClient {
+    pub(crate) struct MockVerifierClient {
         replies: HashMap<String, bytes::Bytes>,
     }
 
     impl MockVerifierClient {
-        pub fn new(replies: HashMap<String, bytes::Bytes>) -> Self {
+        pub(crate) fn new(replies: HashMap<String, bytes::Bytes>) -> Self {
             Self { replies }
         }
     }

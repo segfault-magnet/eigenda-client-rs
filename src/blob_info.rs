@@ -13,9 +13,9 @@ use super::{
 /// Internal of BlobInfo
 /// Contains the KZG Commitment
 #[derive(Debug, PartialEq, Clone)]
-pub struct G1Commitment {
-    pub x: Vec<u8>,
-    pub y: Vec<u8>,
+pub(crate) struct G1Commitment {
+    pub(crate) x: Vec<u8>,
+    pub(crate) y: Vec<u8>,
 }
 
 impl From<DisperserG1Commitment> for G1Commitment {
@@ -30,11 +30,11 @@ impl From<DisperserG1Commitment> for G1Commitment {
 /// Internal of BlobInfo
 /// Contains data related to the blob quorums
 #[derive(Debug, PartialEq, Clone)]
-pub struct BlobQuorumParam {
-    pub quorum_number: u32,
-    pub adversary_threshold_percentage: u32,
-    pub confirmation_threshold_percentage: u32,
-    pub chunk_length: u32,
+pub(crate) struct BlobQuorumParam {
+    pub(crate) quorum_number: u32,
+    pub(crate) adversary_threshold_percentage: u32,
+    pub(crate) confirmation_threshold_percentage: u32,
+    pub(crate) chunk_length: u32,
 }
 
 impl From<DisperserBlobQuorumParam> for BlobQuorumParam {
@@ -51,10 +51,10 @@ impl From<DisperserBlobQuorumParam> for BlobQuorumParam {
 /// Internal of BlobInfo
 /// Contains the blob header data
 #[derive(Debug, PartialEq, Clone)]
-pub struct BlobHeader {
-    pub commitment: G1Commitment,
-    pub data_length: u32,
-    pub blob_quorum_params: Vec<BlobQuorumParam>,
+pub(crate) struct BlobHeader {
+    pub(crate) commitment: G1Commitment,
+    pub(crate) data_length: u32,
+    pub(crate) blob_quorum_params: Vec<BlobQuorumParam>,
 }
 
 impl TryFrom<DisperserBlobHeader> for BlobHeader {
@@ -78,11 +78,11 @@ impl TryFrom<DisperserBlobHeader> for BlobHeader {
 
 /// Internal of BlobInfo
 #[derive(Debug, PartialEq, Clone)]
-pub struct BatchHeader {
-    pub batch_root: Vec<u8>,
-    pub quorum_numbers: Vec<u8>,
-    pub quorum_signed_percentages: Vec<u8>,
-    pub reference_block_number: u32,
+pub(crate) struct BatchHeader {
+    pub(crate) batch_root: Vec<u8>,
+    pub(crate) quorum_numbers: Vec<u8>,
+    pub(crate) quorum_signed_percentages: Vec<u8>,
+    pub(crate) reference_block_number: u32,
 }
 
 impl From<DisperserBatchHeader> for BatchHeader {
@@ -98,12 +98,12 @@ impl From<DisperserBatchHeader> for BatchHeader {
 
 /// Internal of BlobInfo
 #[derive(Debug, PartialEq, Clone)]
-pub struct BatchMetadata {
-    pub batch_header: BatchHeader,
-    pub signatory_record_hash: Vec<u8>,
-    pub fee: Vec<u8>,
-    pub confirmation_block_number: u32,
-    pub batch_header_hash: Vec<u8>,
+pub(crate) struct BatchMetadata {
+    pub(crate) batch_header: BatchHeader,
+    pub(crate) signatory_record_hash: Vec<u8>,
+    pub(crate) fee: Vec<u8>,
+    pub(crate) confirmation_block_number: u32,
+    pub(crate) batch_header_hash: Vec<u8>,
 }
 
 impl TryFrom<DisperserBatchMetadata> for BatchMetadata {
@@ -124,12 +124,12 @@ impl TryFrom<DisperserBatchMetadata> for BatchMetadata {
 
 /// Internal of BlobInfo
 #[derive(Debug, PartialEq, Clone)]
-pub struct BlobVerificationProof {
-    pub batch_id: u32,
-    pub blob_index: u32,
-    pub batch_medatada: BatchMetadata,
-    pub inclusion_proof: Vec<u8>,
-    pub quorum_indexes: Vec<u8>,
+pub(crate) struct BlobVerificationProof {
+    pub(crate) batch_id: u32,
+    pub(crate) blob_index: u32,
+    pub(crate) batch_medatada: BatchMetadata,
+    pub(crate) inclusion_proof: Vec<u8>,
+    pub(crate) quorum_indexes: Vec<u8>,
 }
 
 impl TryFrom<DisperserBlobVerificationProof> for BlobVerificationProof {
@@ -152,9 +152,9 @@ impl TryFrom<DisperserBlobVerificationProof> for BlobVerificationProof {
 
 /// Data returned by the disperser when a blob is dispersed
 #[derive(Debug, PartialEq, Clone)]
-pub struct BlobInfo {
-    pub blob_header: BlobHeader,
-    pub blob_verification_proof: BlobVerificationProof,
+pub(crate) struct BlobInfo {
+    pub(crate) blob_header: BlobHeader,
+    pub(crate) blob_verification_proof: BlobVerificationProof,
 }
 
 impl TryFrom<DisperserBlobInfo> for BlobInfo {

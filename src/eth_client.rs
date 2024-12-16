@@ -10,63 +10,63 @@ use crate::errors::EthClientError;
 /// Request ID for the RPC
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum RpcRequestId {
+pub(crate) enum RpcRequestId {
     Number(u64),
     String(String),
 }
 
 /// Response for a successful RPC request
 #[derive(Serialize, Deserialize, Debug)]
-pub struct RpcSuccessResponse {
-    pub id: RpcRequestId,
-    pub jsonrpc: String,
-    pub result: Value,
+pub(crate) struct RpcSuccessResponse {
+    pub(crate) id: RpcRequestId,
+    pub(crate) jsonrpc: String,
+    pub(crate) result: Value,
 }
 
 /// Metadata for an RPC error
 #[derive(Serialize, Deserialize, Debug)]
-pub struct RpcErrorMetadata {
-    pub code: i32,
+pub(crate) struct RpcErrorMetadata {
+    pub(crate) code: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<String>,
-    pub message: String,
+    pub(crate) data: Option<String>,
+    pub(crate) message: String,
 }
 
 /// Response for an RPC error
 #[derive(Serialize, Deserialize, Debug)]
-pub struct RpcErrorResponse {
-    pub id: RpcRequestId,
-    pub jsonrpc: String,
-    pub error: RpcErrorMetadata,
+pub(crate) struct RpcErrorResponse {
+    pub(crate) id: RpcRequestId,
+    pub(crate) jsonrpc: String,
+    pub(crate) error: RpcErrorMetadata,
 }
 
 /// Response for an RPC request
 #[derive(Deserialize, Debug)]
 #[serde(untagged)]
-pub enum RpcResponse {
+pub(crate) enum RpcResponse {
     Success(RpcSuccessResponse),
     Error(RpcErrorResponse),
 }
 
 /// Request for the RPC
 #[derive(Serialize, Deserialize, Debug)]
-pub struct RpcRequest {
-    pub id: RpcRequestId,
-    pub jsonrpc: String,
-    pub method: String,
-    pub params: Option<Vec<Value>>,
+pub(crate) struct RpcRequest {
+    pub(crate) id: RpcRequestId,
+    pub(crate) jsonrpc: String,
+    pub(crate) method: String,
+    pub(crate) params: Option<Vec<Value>>,
 }
 
 /// Client for interacting with an Ethereum node
 #[derive(Debug, Clone)]
-pub struct EthClient {
+pub(crate) struct EthClient {
     client: Client,
-    pub url: String,
+    pub(crate) url: String,
 }
 
 impl EthClient {
     /// Creates a new EthClient
-    pub fn new(url: &str) -> Self {
+    pub(crate) fn new(url: &str) -> Self {
         Self {
             client: Client::new(),
             url: url.to_string(),
@@ -89,7 +89,7 @@ impl EthClient {
     }
 
     /// Gets the latest block number
-    pub async fn get_block_number(&self) -> Result<U256, EthClientError> {
+    pub(crate) async fn get_block_number(&self) -> Result<U256, EthClientError> {
         let request = RpcRequest {
             id: RpcRequestId::Number(1),
             jsonrpc: "2.0".to_string(),
@@ -109,7 +109,7 @@ impl EthClient {
     }
 
     /// Calls a contract
-    pub async fn call(
+    pub(crate) async fn call(
         &self,
         to: Address,
         calldata: Bytes,

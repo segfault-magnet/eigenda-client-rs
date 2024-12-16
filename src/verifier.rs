@@ -18,7 +18,7 @@ use super::{
 
 /// Trait that defines the methods for the ethclient used by the verifier, needed in order to mock it for tests
 #[async_trait::async_trait]
-pub trait VerifierClient: Sync + Send + std::fmt::Debug {
+pub(crate) trait VerifierClient: Sync + Send + std::fmt::Debug {
     fn clone_boxed(&self) -> Box<dyn VerifierClient>;
 
     /// Returns the current block number.
@@ -55,19 +55,19 @@ impl VerifierClient for EthClient {
 
 /// Configuration for the verifier used for authenticated dispersals
 #[derive(Debug, Clone)]
-pub struct VerifierConfig {
-    pub svc_manager_addr: String,
-    pub max_blob_size: u32,
-    pub g1_url: String,
-    pub g2_url: String,
-    pub settlement_layer_confirmation_depth: u32,
+pub(crate) struct VerifierConfig {
+    pub(crate) svc_manager_addr: String,
+    pub(crate) max_blob_size: u32,
+    pub(crate) g1_url: String,
+    pub(crate) g2_url: String,
+    pub(crate) settlement_layer_confirmation_depth: u32,
 }
 
 /// Verifier used to verify the integrity of the blob info
 /// Kzg is used for commitment verification
 /// EigenDA service manager is used to connect to the service manager contract
 #[derive(Debug)]
-pub struct Verifier {
+pub(crate) struct Verifier {
     kzg: Kzg,
     cfg: VerifierConfig,
     eth_client: Box<dyn VerifierClient>,
@@ -84,10 +84,10 @@ impl Clone for Verifier {
 }
 
 impl Verifier {
-    pub const SRSORDER: u32 = 268435456; // 2 ^ 28
-    pub const G1POINT: &'static str = "g1.point";
-    pub const G2POINT: &'static str = "g2.point.powerOf2";
-    pub const POINT_SIZE: u32 = 32;
+    pub(crate) const SRSORDER: u32 = 268435456; // 2 ^ 28
+    pub(crate) const G1POINT: &'static str = "g1.point";
+    pub(crate) const G2POINT: &'static str = "g2.point.powerOf2";
+    pub(crate) const POINT_SIZE: u32 = 32;
 
     async fn save_point(url: String, point: String) -> Result<(), VerificationError> {
         let url = Url::parse(&url).map_err(|e| VerificationError::Link(e.to_string()))?;
@@ -115,7 +115,7 @@ impl Verifier {
         Ok(".".to_string())
     }
     /// Returns a new Verifier
-    pub async fn new<T: VerifierClient + 'static>(
+    pub(crate) async fn new<T: VerifierClient + 'static>(
         cfg: VerifierConfig,
         eth_client: T,
     ) -> Result<Self, VerificationError> {
@@ -147,7 +147,7 @@ impl Verifier {
     }
 
     /// Compare the given commitment with the commitment generated with the blob
-    pub fn verify_commitment(
+    pub(crate) fn verify_commitment(
         &self,
         expected_commitment: G1Commitment,
         blob: Vec<u8>,
@@ -170,7 +170,7 @@ impl Verifier {
     }
 
     /// Returns the hashed blob header
-    pub fn hash_encode_blob_header(&self, blob_header: BlobHeader) -> Vec<u8> {
+    pub(crate) fn hash_encode_blob_header(&self, blob_header: BlobHeader) -> Vec<u8> {
         let mut blob_quorums = vec![];
         for quorum in blob_header.blob_quorum_params {
             let quorum = Token::Tuple(vec![
@@ -200,7 +200,7 @@ impl Verifier {
     }
 
     /// Computes the merkle inclusion proof
-    pub fn process_inclusion_proof(
+    pub(crate) fn process_inclusion_proof(
         &self,
         proof: &[u8],
         leaf: &[u8],
@@ -236,7 +236,7 @@ impl Verifier {
     }
 
     /// Verifies the certificate's batch root
-    pub fn verify_merkle_proof(&self, cert: BlobInfo) -> Result<(), VerificationError> {
+    pub(crate) fn verify_merkle_proof(&self, cert: BlobInfo) -> Result<(), VerificationError> {
         let inclusion_proof = cert.blob_verification_proof.inclusion_proof;
         let root = cert
             .blob_verification_proof
@@ -340,7 +340,7 @@ impl Verifier {
     }
 
     /// Verifies the certificate batch hash
-    pub async fn verify_batch(&self, blob_info: BlobInfo) -> Result<(), VerificationError> {
+    pub(crate) async fn verify_batch(&self, blob_info: BlobInfo) -> Result<(), VerificationError> {
         let expected_hash = self
             .call_batch_id_to_metadata_hash(blob_info.clone())
             .await?;
@@ -471,7 +471,10 @@ impl Verifier {
         Ok(required_quorums)
     }
     /// Verifies that the certificate's blob quorum params are correct
-    pub async fn verify_security_params(&self, cert: BlobInfo) -> Result<(), VerificationError> {
+    pub(crate) async fn verify_security_params(
+        &self,
+        cert: BlobInfo,
+    ) -> Result<(), VerificationError> {
         let blob_header = cert.blob_header;
         let batch_header = cert.blob_verification_proof.batch_medatada.batch_header;
 
@@ -518,7 +521,7 @@ impl Verifier {
     }
 
     /// Verifies that the certificate is valid
-    pub async fn verify_inclusion_data_against_settlement_layer(
+    pub(crate) async fn verify_inclusion_data_against_settlement_layer(
         &self,
         cert: BlobInfo,
     ) -> Result<(), VerificationError> {
