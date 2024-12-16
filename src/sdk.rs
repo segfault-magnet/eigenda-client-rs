@@ -28,6 +28,7 @@ use tonic::{
     Streaming,
 };
 
+/// Raw Client that comunicates with the disperser
 #[derive(Debug, Clone)]
 pub(crate) struct RawEigenClient<T: GetBlobData> {
     client: Arc<Mutex<DisperserClient<Channel>>>,
@@ -41,7 +42,7 @@ pub(crate) const DATA_CHUNK_SIZE: usize = 32;
 
 impl<T: GetBlobData> RawEigenClient<T> {
     const BLOB_SIZE_LIMIT: usize = 1024 * 1024 * 2; // 2 MB
-
+    /// Creates a new RawEigenClient
     pub async fn new(
         private_key: SecretKey,
         config: EigenConfig,
@@ -71,10 +72,12 @@ impl<T: GetBlobData> RawEigenClient<T> {
         })
     }
 
+    /// Returns the blob size limit
     pub fn blob_size_limit() -> usize {
         Self::BLOB_SIZE_LIMIT
     }
 
+    /// Dispatches a blob to the disperser without authentication
     async fn dispatch_blob_non_authenticated(
         &self,
         data: Vec<u8>,
@@ -106,6 +109,7 @@ impl<T: GetBlobData> RawEigenClient<T> {
         }
     }
 
+    /// Dispatches a blob to the disperser with authentication
     async fn dispatch_blob_authenticated(&self, data: Vec<u8>) -> Result<String, EigenClientError> {
         let (tx, rx) = mpsc::unbounded_channel();
 
@@ -154,6 +158,7 @@ impl<T: GetBlobData> RawEigenClient<T> {
         }
     }
 
+    /// Gets the blob info for a given request id
     pub async fn get_commitment(
         &self,
         request_id: &str,
@@ -190,6 +195,7 @@ impl<T: GetBlobData> RawEigenClient<T> {
         Ok(Some(blob_info))
     }
 
+    /// Returns the inclusion data for a given request id
     pub async fn get_inclusion_data(
         &self,
         request_id: &str,
@@ -202,6 +208,7 @@ impl<T: GetBlobData> RawEigenClient<T> {
         }
     }
 
+    /// Dispatches a blob to the disperser
     pub async fn dispatch_blob(&self, data: Vec<u8>) -> Result<String, EigenClientError> {
         if self.config.authenticated {
             self.dispatch_blob_authenticated(data).await
@@ -331,6 +338,7 @@ impl<T: GetBlobData> RawEigenClient<T> {
         }
     }
 
+    /// Returns the blob data
     pub async fn get_blob_data(
         &self,
         blob_info: BlobInfo,

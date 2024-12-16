@@ -1,5 +1,6 @@
 use tonic::{transport::Error as TonicError, Status};
 
+/// Errors returned by this crate
 #[derive(Debug, thiserror::Error)]
 pub enum EigenClientError {
     #[error(transparent)]
@@ -54,12 +55,14 @@ pub enum EigenClientError {
     GetBlobFunction(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
+/// Errors specific to conversion
 #[derive(Debug, thiserror::Error)]
 pub enum ConversionError {
     #[error("Failed to convert {0}")]
     NotPresent(String),
 }
 
+/// Errors for the EthClient
 #[derive(Debug, thiserror::Error)]
 pub enum EthClientError {
     #[error("Failed to serialize request body: {0}")]
@@ -72,6 +75,7 @@ pub enum EthClientError {
     RPC(String),
 }
 
+/// Errors for the Verifier
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
     #[error("Service Manager Error: {0}")]

@@ -10,6 +10,8 @@ use super::{
     },
 };
 
+/// Internal of BlobInfo
+/// Contains the KZG Commitment
 #[derive(Debug, PartialEq, Clone)]
 pub struct G1Commitment {
     pub x: Vec<u8>,
@@ -25,6 +27,8 @@ impl From<DisperserG1Commitment> for G1Commitment {
     }
 }
 
+/// Internal of BlobInfo
+/// Contains data related to the blob quorums
 #[derive(Debug, PartialEq, Clone)]
 pub struct BlobQuorumParam {
     pub quorum_number: u32,
@@ -44,6 +48,8 @@ impl From<DisperserBlobQuorumParam> for BlobQuorumParam {
     }
 }
 
+/// Internal of BlobInfo
+/// Contains the blob header data
 #[derive(Debug, PartialEq, Clone)]
 pub struct BlobHeader {
     pub commitment: G1Commitment,
@@ -70,6 +76,7 @@ impl TryFrom<DisperserBlobHeader> for BlobHeader {
     }
 }
 
+/// Internal of BlobInfo
 #[derive(Debug, PartialEq, Clone)]
 pub struct BatchHeader {
     pub batch_root: Vec<u8>,
@@ -89,6 +96,7 @@ impl From<DisperserBatchHeader> for BatchHeader {
     }
 }
 
+/// Internal of BlobInfo
 #[derive(Debug, PartialEq, Clone)]
 pub struct BatchMetadata {
     pub batch_header: BatchHeader,
@@ -114,6 +122,7 @@ impl TryFrom<DisperserBatchMetadata> for BatchMetadata {
     }
 }
 
+/// Internal of BlobInfo
 #[derive(Debug, PartialEq, Clone)]
 pub struct BlobVerificationProof {
     pub batch_id: u32,
@@ -141,6 +150,7 @@ impl TryFrom<DisperserBlobVerificationProof> for BlobVerificationProof {
     }
 }
 
+/// Data returned by the disperser when a blob is dispersed
 #[derive(Debug, PartialEq, Clone)]
 pub struct BlobInfo {
     pub blob_header: BlobHeader,

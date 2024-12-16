@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 
 use crate::errors::EthClientError;
 
+/// Request ID for the RPC
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum RpcRequestId {
@@ -14,6 +15,7 @@ pub enum RpcRequestId {
     String(String),
 }
 
+/// Response for a successful RPC request
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RpcSuccessResponse {
     pub id: RpcRequestId,
@@ -21,6 +23,7 @@ pub struct RpcSuccessResponse {
     pub result: Value,
 }
 
+/// Metadata for an RPC error
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RpcErrorMetadata {
     pub code: i32,
@@ -29,6 +32,7 @@ pub struct RpcErrorMetadata {
     pub message: String,
 }
 
+/// Response for an RPC error
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RpcErrorResponse {
     pub id: RpcRequestId,
@@ -36,6 +40,7 @@ pub struct RpcErrorResponse {
     pub error: RpcErrorMetadata,
 }
 
+/// Response for an RPC request
 #[derive(Deserialize, Debug)]
 #[serde(untagged)]
 pub enum RpcResponse {
@@ -43,6 +48,7 @@ pub enum RpcResponse {
     Error(RpcErrorResponse),
 }
 
+/// Request for the RPC
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RpcRequest {
     pub id: RpcRequestId,
@@ -51,6 +57,7 @@ pub struct RpcRequest {
     pub params: Option<Vec<Value>>,
 }
 
+/// Client for interacting with an Ethereum node
 #[derive(Debug, Clone)]
 pub struct EthClient {
     client: Client,
@@ -58,6 +65,7 @@ pub struct EthClient {
 }
 
 impl EthClient {
+    /// Creates a new EthClient
     pub fn new(url: &str) -> Self {
         Self {
             client: Client::new(),
@@ -65,6 +73,7 @@ impl EthClient {
         }
     }
 
+    /// Sends a request to the Ethereum node
     async fn send_request(&self, request: RpcRequest) -> Result<RpcResponse, EthClientError> {
         self.client
             .post(&self.url)
@@ -79,6 +88,7 @@ impl EthClient {
             .map_err(EthClientError::from)
     }
 
+    /// Gets the latest block number
     pub async fn get_block_number(&self) -> Result<U256, EthClientError> {
         let request = RpcRequest {
             id: RpcRequestId::Number(1),
@@ -98,6 +108,7 @@ impl EthClient {
         }
     }
 
+    /// Calls a contract
     pub async fn call(
         &self,
         to: Address,

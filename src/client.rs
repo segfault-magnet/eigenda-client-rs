@@ -24,6 +24,7 @@ pub struct EigenClient<T: GetBlobData> {
 }
 
 impl<T: GetBlobData> EigenClient<T> {
+    /// Creates a new EigenClient
     pub async fn new(
         config: EigenConfig,
         secrets: EigenSecrets,
@@ -37,12 +38,14 @@ impl<T: GetBlobData> EigenClient<T> {
         })
     }
 
+    /// Dispatches a blob to the Eigen DA service
     pub async fn dispatch_blob(&self, data: Vec<u8>) -> Result<String, EigenClientError> {
         let blob_id = self.client.dispatch_blob(data).await?;
 
         Ok(blob_id)
     }
 
+    /// Gets the inclusion data for a blob
     pub async fn get_inclusion_data(
         &self,
         blob_id: &str,
@@ -51,6 +54,7 @@ impl<T: GetBlobData> EigenClient<T> {
         Ok(inclusion_data)
     }
 
+    /// Returns the blob size limit
     pub fn blob_size_limit(&self) -> Option<usize> {
         Some(RawEigenClient::<T>::blob_size_limit())
     }

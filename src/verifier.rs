@@ -15,6 +15,8 @@ use super::{
     errors::EthClientError,
     eth_client::EthClient,
 };
+
+/// Trait that defines the methods for the ethclient used by the verifier, needed in order to mock it for tests
 #[async_trait::async_trait]
 pub trait VerifierClient: Sync + Send + std::fmt::Debug {
     fn clone_boxed(&self) -> Box<dyn VerifierClient>;
@@ -112,6 +114,7 @@ impl Verifier {
 
         Ok(".".to_string())
     }
+    /// Returns a new Verifier
     pub async fn new<T: VerifierClient + 'static>(
         cfg: VerifierConfig,
         eth_client: T,
@@ -166,6 +169,7 @@ impl Verifier {
         Ok(())
     }
 
+    /// Returns the hashed blob header
     pub fn hash_encode_blob_header(&self, blob_header: BlobHeader) -> Vec<u8> {
         let mut blob_quorums = vec![];
         for quorum in blob_header.blob_quorum_params {
@@ -195,6 +199,7 @@ impl Verifier {
         hash.to_vec()
     }
 
+    /// Computes the merkle inclusion proof
     pub fn process_inclusion_proof(
         &self,
         proof: &[u8],
