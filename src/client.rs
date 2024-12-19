@@ -14,21 +14,27 @@ use std::{str::FromStr, sync::Arc};
 /// It you don't need to use it, just return None and it would be as if it didn't exist
 /// It can be used as extra verification if you also store the blob yourself
 #[async_trait]
-pub trait GetBlobData: Clone + std::fmt::Debug + Send + Sync {
-    async fn call(&self, input: &str) -> Result<Option<Vec<u8>>, Box<dyn Error + Send + Sync>>;
-}
-/// EigenClient is a client for the Eigen DA service.
-#[derive(Debug, Clone)]
-pub struct EigenClient<T: GetBlobData> {
-    pub(crate) client: Arc<RawEigenClient<T>>,
+pub trait GetBlobData: std::fmt::Debug + Send + Sync {
+    async fn get_blob_data(
+        &self,
+        input: &str,
+    ) -> Result<Option<Vec<u8>>, Box<dyn Error + Send + Sync>>;
+
+    fn clone_boxed(&self) -> Box<dyn GetBlobData>;
 }
 
-impl<T: GetBlobData> EigenClient<T> {
+/// EigenClient is a client for the Eigen DA service.
+#[derive(Debug, Clone)]
+pub struct EigenClient {
+    pub(crate) client: Arc<RawEigenClient>,
+}
+
+impl EigenClient {
     /// Creates a new EigenClient
     pub async fn new(
         config: EigenConfig,
         secrets: EigenSecrets,
-        get_blob_data: Box<T>,
+        get_blob_data: Box<dyn GetBlobData>,
     ) -> Result<Self, EigenClientError> {
         let private_key = SecretKey::from_str(secrets.private_key.0.expose_secret().as_str())?;
 
@@ -56,6 +62,6 @@ impl<T: GetBlobData> EigenClient<T> {
 
     /// Returns the blob size limit
     pub fn blob_size_limit(&self) -> Option<usize> {
-        Some(RawEigenClient::<T>::blob_size_limit())
+        Some(RawEigenClient::blob_size_limit())
     }
 }

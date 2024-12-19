@@ -19,6 +19,7 @@ use crate::{
     errors::{EigenClientError, VerificationError},
 };
 use byteorder::{BigEndian, ByteOrder};
+use ethereum_types::Address;
 use secp256k1::{ecdsa::RecoverableSignature, SecretKey};
 use tiny_keccak::{Hasher, Keccak};
 use tokio::sync::{mpsc, Mutex};
@@ -27,38 +28,53 @@ use tonic::{
     transport::{Channel, ClientTlsConfig, Endpoint},
     Streaming,
 };
+use url::Url;
 
 /// Raw Client that comunicates with the disperser
-#[derive(Debug, Clone)]
-pub(crate) struct RawEigenClient<T: GetBlobData> {
+#[derive(Debug)]
+pub(crate) struct RawEigenClient {
     client: Arc<Mutex<DisperserClient<Channel>>>,
     private_key: SecretKey,
     pub config: EigenConfig,
     verifier: Verifier,
-    get_blob_data: Box<T>,
+    get_blob_data: Box<dyn GetBlobData>,
+}
+
+impl Clone for RawEigenClient {
+    fn clone(&self) -> Self {
+        Self {
+            client: self.client.clone(),
+            private_key: self.private_key,
+            config: self.config.clone(),
+            verifier: self.verifier.clone(),
+            get_blob_data: self.get_blob_data.clone_boxed(),
+        }
+    }
 }
 
 pub(crate) const DATA_CHUNK_SIZE: usize = 32;
 
-impl<T: GetBlobData> RawEigenClient<T> {
+impl RawEigenClient {
     const BLOB_SIZE_LIMIT: usize = 1024 * 1024 * 2; // 2 MB
     /// Creates a new RawEigenClient
     pub(crate) async fn new(
         private_key: SecretKey,
         config: EigenConfig,
-        get_blob_data: Box<T>,
+        get_blob_data: Box<dyn GetBlobData>,
     ) -> Result<Self, EigenClientError> {
         let endpoint =
             Endpoint::from_str(config.disperser_rpc.as_str())?.tls_config(ClientTlsConfig::new())?;
         let client = Arc::new(Mutex::new(DisperserClient::connect(endpoint).await?));
 
         let verifier_config = VerifierConfig {
-            svc_manager_addr: config.eigenda_svc_manager_address.clone(),
+            svc_manager_addr: Address::from_str(&config.eigenda_svc_manager_address)
+                .map_err(|e| VerificationError::ServiceManager(e.to_string()))?,
             max_blob_size: Self::BLOB_SIZE_LIMIT as u32,
-            g1_url: config.g1_url.clone(),
-            g2_url: config.g2_url.clone(),
-            settlement_layer_confirmation_depth: config.settlement_layer_confirmation_depth.max(0)
-                as u32,
+            g1_url: Url::parse(&config.g1_url)
+                .map_err(|e| VerificationError::Kzg(e.to_string()))?,
+            g2_url: Url::parse(&config.g2_url)
+                .map_err(|e| VerificationError::Kzg(e.to_string()))?,
+            settlement_layer_confirmation_depth: config.settlement_layer_confirmation_depth,
         };
         let eth_client = eth_client::EthClient::new(&config.eigenda_eth_rpc);
 
@@ -173,7 +189,7 @@ impl<T: GetBlobData> RawEigenClient<T> {
             return Err(EigenClientError::FailedToGetBlobData);
         };
 
-        let data_db = self.get_blob_data.call(request_id).await?;
+        let data_db = self.get_blob_data.get_blob_data(request_id).await?;
         if let Some(data_db) = data_db {
             if data_db != data {
                 return Err(EigenClientError::DataMismatch);
