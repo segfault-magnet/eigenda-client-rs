@@ -1,4 +1,4 @@
-use crate::errors::EigenClientError;
+use crate::errors::{CommunicationError, ConfigError, EigenClientError};
 
 use super::{
     blob_info::BlobInfo,
@@ -17,7 +17,8 @@ pub struct EigenClient {
 
 impl EigenClient {
     pub async fn new(config: EigenConfig, secrets: EigenSecrets) -> Result<Self, EigenClientError> {
-        let private_key = SecretKey::from_str(secrets.private_key.0.expose_secret().as_str())?;
+        let private_key = SecretKey::from_str(secrets.private_key.0.expose_secret().as_str())
+            .map_err(ConfigError::Secp)?;
 
         let client = RawEigenClient::new(private_key, config).await?;
         Ok(Self {
@@ -38,8 +39,9 @@ impl EigenClient {
 
     pub async fn get_inclusion_data(&self, blob_id: &str) -> Result<Vec<u8>, EigenClientError> {
         let blob_info = self.get_commitment(blob_id).await?;
-        let rlp_encoded_bytes = hex::decode(blob_info)?;
-        let blob_info: BlobInfo = rlp::decode(&rlp_encoded_bytes)?;
+        let rlp_encoded_bytes = hex::decode(blob_info).map_err(CommunicationError::Hex)?;
+        let blob_info: BlobInfo =
+            rlp::decode(&rlp_encoded_bytes).map_err(CommunicationError::Rlp)?;
         let inclusion_data = blob_info.blob_verification_proof.inclusion_proof;
         Ok(inclusion_data)
     }

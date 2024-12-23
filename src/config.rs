@@ -1,7 +1,7 @@
 use secrecy::{ExposeSecret, Secret};
 use std::str::FromStr;
 
-use crate::errors::EigenClientError;
+use crate::errors::{ConfigError, EigenClientError};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PointsSource {
@@ -61,8 +61,6 @@ impl FromStr for PrivateKey {
     type Err = EigenClientError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(PrivateKey(
-            s.parse().map_err(|_| EigenClientError::PrivateKey)?,
-        ))
+        Ok(PrivateKey(s.parse().map_err(|_| ConfigError::PrivateKey)?))
     }
 }

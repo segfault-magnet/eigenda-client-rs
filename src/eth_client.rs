@@ -36,6 +36,12 @@ pub struct RpcErrorResponse {
     pub error: RpcErrorMetadata,
 }
 
+impl std::fmt::Display for RpcErrorResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RpcErrorResponse: {:?}", self)
+    }
+}
+
 #[derive(Deserialize, Debug)]
 #[serde(untagged)]
 pub enum RpcResponse {
@@ -69,9 +75,7 @@ impl EthClient {
         self.client
             .post(&self.url)
             .header("content-type", "application/json")
-            .body(serde_json::ser::to_string(&request).map_err(|error| {
-                EthClientError::FailedToSerializeRequestBody(format!("{error}: {request:?}"))
-            })?)
+            .body(serde_json::ser::to_string(&request).map_err(EthClientError::SerdeJSON)?)
             .send()
             .await?
             .json::<RpcResponse>()
@@ -91,9 +95,7 @@ impl EthClient {
             Ok(RpcResponse::Success(result)) => {
                 serde_json::from_value(result.result).map_err(EthClientError::SerdeJSON)
             }
-            Ok(RpcResponse::Error(error_response)) => {
-                Err(EthClientError::RPC(error_response.error.message))
-            }
+            Ok(RpcResponse::Error(error_response)) => Err(EthClientError::RPC(error_response)),
             Err(error) => Err(error),
         }
     }
@@ -126,9 +128,7 @@ impl EthClient {
             Ok(RpcResponse::Success(result)) => {
                 serde_json::from_value(result.result).map_err(EthClientError::SerdeJSON)
             }
-            Ok(RpcResponse::Error(error_response)) => {
-                Err(EthClientError::RPC(error_response.error.message))
-            }
+            Ok(RpcResponse::Error(error_response)) => Err(EthClientError::RPC(error_response)),
             Err(error) => Err(error),
         }
     }
