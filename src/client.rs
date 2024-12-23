@@ -57,7 +57,7 @@ impl EigenClient {
 /// `cargo test -p zksync_da_clients -- --ignored`
 #[cfg(test)]
 mod tests {
-    use crate::config::{PointsSource, PrivateKey};
+    use crate::config::{PrivateKey, SRSPointsSource};
     use serial_test::serial;
 
     use super::*;
@@ -78,15 +78,15 @@ mod tests {
     async fn test_non_auth_dispersal() {
         let config = EigenConfig {
             disperser_rpc: "https://disperser-holesky.eigenda.xyz:443".to_string(),
+            eth_rpc: "https://ethereum-holesky-rpc.publicnode.com".to_string(),
             settlement_layer_confirmation_depth: -1,
-            eigenda_eth_rpc: "https://ethereum-holesky-rpc.publicnode.com".to_string(),
             eigenda_svc_manager_address: "0xD4A7E1Bd8015057293f0D0A557088c286942e84b".to_string(),
-            status_query_timeout: 1800000, // 30 minutes
-            status_query_interval: 5,      // 5 ms
+            status_query_timeout_ms: 1800000, // 30 minutes
+            status_query_interval_ms: 5,      // 5 ms
             wait_for_finalization: false,
             authenticated: false,
             verify_cert: true,
-            points_source: PointsSource::Path("resources".to_string()),
+            points_source: SRSPointsSource::Path("resources".to_string()),
             chain_id: 17000,
         };
         let secrets = EigenSecrets {
@@ -116,15 +116,15 @@ mod tests {
     async fn test_auth_dispersal() {
         let config = EigenConfig {
             disperser_rpc: "https://disperser-holesky.eigenda.xyz:443".to_string(),
+            eth_rpc: "https://ethereum-holesky-rpc.publicnode.com".to_string(),
             settlement_layer_confirmation_depth: -1,
-            eigenda_eth_rpc: "https://ethereum-holesky-rpc.publicnode.com".to_string(),
             eigenda_svc_manager_address: "0xD4A7E1Bd8015057293f0D0A557088c286942e84b".to_string(),
-            status_query_timeout: 1800000, // 30 minutes
-            status_query_interval: 5,      // 5 ms
+            status_query_timeout_ms: 1800000, // 30 minutes
+            status_query_interval_ms: 5,      // 5 ms
             wait_for_finalization: false,
             authenticated: true,
             verify_cert: true,
-            points_source: PointsSource::Path("resources".to_string()),
+            points_source: SRSPointsSource::Path("resources".to_string()),
             chain_id: 17000,
         };
         let secrets = EigenSecrets {
@@ -153,14 +153,14 @@ mod tests {
     async fn test_wait_for_finalization() {
         let config = EigenConfig {
             disperser_rpc: "https://disperser-holesky.eigenda.xyz:443".to_string(),
-            status_query_timeout: 1800000, // 30 minutes
-            status_query_interval: 5000,   // 5000 ms
+            status_query_timeout_ms: 1800000, // 30 minutes
+            status_query_interval_ms: 5000,   // 5000 ms
             wait_for_finalization: true,
             authenticated: true,
             verify_cert: true,
-            points_source: PointsSource::Path("resources".to_string()),
+            points_source: SRSPointsSource::Path("resources".to_string()),
             settlement_layer_confirmation_depth: 0,
-            eigenda_eth_rpc: "https://ethereum-holesky-rpc.publicnode.com".to_string(),
+            eth_rpc: "https://ethereum-holesky-rpc.publicnode.com".to_string(),
             eigenda_svc_manager_address: "0xD4A7E1Bd8015057293f0D0A557088c286942e84b".to_string(),
             chain_id: 17000,
         };
@@ -190,15 +190,15 @@ mod tests {
     async fn test_settlement_layer_confirmation_depth() {
         let config = EigenConfig {
             disperser_rpc: "https://disperser-holesky.eigenda.xyz:443".to_string(),
+            eth_rpc: "https://ethereum-holesky-rpc.publicnode.com".to_string(),
             settlement_layer_confirmation_depth: 5,
-            eigenda_eth_rpc: "https://ethereum-holesky-rpc.publicnode.com".to_string(),
             eigenda_svc_manager_address: "0xD4A7E1Bd8015057293f0D0A557088c286942e84b".to_string(),
-            status_query_timeout: 1800000, // 30 minutes
-            status_query_interval: 5,      // 5 ms
+            status_query_timeout_ms: 1800000, // 30 minutes
+            status_query_interval_ms: 5,      // 5 ms
             wait_for_finalization: false,
             authenticated: false,
             verify_cert: true,
-            points_source: PointsSource::Path("resources".to_string()),
+            points_source: SRSPointsSource::Path("resources".to_string()),
             chain_id: 17000,
         };
         let secrets = EigenSecrets {
@@ -227,15 +227,15 @@ mod tests {
     async fn test_auth_dispersal_settlement_layer_confirmation_depth() {
         let config = EigenConfig {
             disperser_rpc: "https://disperser-holesky.eigenda.xyz:443".to_string(),
+            eth_rpc: "https://ethereum-holesky-rpc.publicnode.com".to_string(),
             settlement_layer_confirmation_depth: 5,
-            eigenda_eth_rpc: "https://ethereum-holesky-rpc.publicnode.com".to_string(),
             eigenda_svc_manager_address: "0xD4A7E1Bd8015057293f0D0A557088c286942e84b".to_string(),
-            status_query_timeout: 1800000, // 30 minutes
-            status_query_interval: 5,      // 5 ms
+            status_query_timeout_ms: 1800000, // 30 minutes
+            status_query_interval_ms: 5,      // 5 ms
             wait_for_finalization: false,
             authenticated: true,
             verify_cert: true,
-            points_source: PointsSource::Path("resources".to_string()),
+            points_source: SRSPointsSource::Path("resources".to_string()),
             chain_id: 17000,
         };
         let secrets = EigenSecrets {

@@ -11,7 +11,7 @@ use crate::errors::VerificationError;
 
 use super::{
     blob_info::{BatchHeader, BlobHeader, BlobInfo, G1Commitment},
-    config::PointsSource,
+    config::SRSPointsSource,
     errors::EthClientError,
     eth_client::EthClient,
     BATCH_ID_TO_METADATA_HASH_FUNCTION_SELECTOR,
@@ -59,7 +59,7 @@ impl VerifierClient for EthClient {
 pub struct VerifierConfig {
     pub svc_manager_addr: String,
     pub max_blob_size: u32,
-    pub points: PointsSource,
+    pub points: SRSPointsSource,
     pub settlement_layer_confirmation_depth: u32,
 }
 
@@ -84,7 +84,7 @@ impl Clone for Verifier {
 }
 
 impl Verifier {
-    async fn save_points(link: String) -> Result<String, VerificationError> {
+    async fn download_points(link: String) -> Result<String, VerificationError> {
         let url_g1 = format!("{}{}", link, "/g1.point");
         let response = reqwest::get(url_g1)
             .await
@@ -119,8 +119,8 @@ impl Verifier {
     ) -> Result<Self, VerificationError> {
         let srs_points_to_load = cfg.max_blob_size / 32;
         let path = match cfg.points.clone() {
-            PointsSource::Path(path) => path,
-            PointsSource::Link(link) => Self::save_points(link).await?,
+            SRSPointsSource::Path(path) => path,
+            SRSPointsSource::Link(link) => Self::download_points(link).await?,
         };
         let kzg = Kzg::setup(
             &format!("{}{}", path, "/g1.point"),
@@ -511,13 +511,13 @@ mod test {
         BatchHeader, BatchMetadata, BlobHeader, BlobInfo, BlobQuorumParam, BlobVerificationProof,
         G1Commitment,
     };
-    use crate::config::PointsSource;
+    use crate::config::SRSPointsSource;
 
     fn get_verifier_config() -> VerifierConfig {
         super::VerifierConfig {
             svc_manager_addr: "0xD4A7E1Bd8015057293f0D0A557088c286942e84b".to_string(),
             max_blob_size: 2 * 1024 * 1024,
-            points: PointsSource::Path("resources".to_string()),
+            points: SRSPointsSource::Path("resources".to_string()),
             settlement_layer_confirmation_depth: 0,
         }
     }

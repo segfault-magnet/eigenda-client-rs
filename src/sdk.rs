@@ -66,7 +66,7 @@ impl RawEigenClient {
             settlement_layer_confirmation_depth: config.settlement_layer_confirmation_depth.max(0)
                 as u32,
         };
-        let eth_client = eth_client::EthClient::new(&config.eigenda_eth_rpc);
+        let eth_client = eth_client::EthClient::new(&config.eth_rpc);
 
         let verifier = Verifier::new(verifier_config, eth_client).await?;
         Ok(RawEigenClient {
@@ -114,7 +114,7 @@ impl RawEigenClient {
                 &ConstantBuilder::default()
                     .with_delay(Duration::from_secs(AVG_BLOCK_TIME))
                     .with_max_times(
-                        (self.config.status_query_timeout
+                        (self.config.status_query_timeout_ms
                             - disperse_elapsed.as_millis() as u64 / AVG_BLOCK_TIME)
                             as usize,
                     ),
@@ -323,9 +323,10 @@ impl RawEigenClient {
         })
         .retry(
             &ConstantBuilder::default()
-                .with_delay(Duration::from_millis(self.config.status_query_interval))
+                .with_delay(Duration::from_millis(self.config.status_query_interval_ms))
                 .with_max_times(
-                    (self.config.status_query_timeout / self.config.status_query_interval) as usize,
+                    (self.config.status_query_timeout_ms / self.config.status_query_interval_ms)
+                        as usize,
                 ),
         )
         .when(|e| matches!(e, BlobStatusError::BlobStillProcessing))
