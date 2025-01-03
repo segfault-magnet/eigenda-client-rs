@@ -12,7 +12,7 @@ pub struct EigenConfig {
     pub eigenda_eth_rpc: String,
     /// Block height needed to reach in order to consider the blob finalized
     /// a value less or equal to 0 means that the disperser will not wait for finalization
-    pub settlement_layer_confirmation_depth: i32,
+    pub settlement_layer_confirmation_depth: u32,
     /// Address of the service manager contract
     pub eigenda_svc_manager_address: String,
     /// Wait for the blob to be finalized before returning the response

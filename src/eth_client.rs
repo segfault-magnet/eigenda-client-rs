@@ -34,7 +34,7 @@ pub(crate) struct RpcErrorMetadata {
 
 /// Response for an RPC error
 #[derive(Serialize, Deserialize, Debug)]
-pub(crate) struct RpcErrorResponse {
+pub struct RpcErrorResponse {
     pub(crate) id: RpcRequestId,
     pub(crate) jsonrpc: String,
     pub(crate) error: RpcErrorMetadata,

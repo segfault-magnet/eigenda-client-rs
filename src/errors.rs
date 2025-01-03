@@ -48,6 +48,8 @@ pub enum CommunicationError {
     Secp(#[from] secp256k1::Error),
     #[error(transparent)]
     Hex(#[from] hex::FromHexError),
+    #[error(transparent)]
+    GetBlobData(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -113,4 +115,6 @@ pub enum VerificationError {
     CommitmentNotOnCorrectSubgroup,
     #[error("Link Error: {0}")]
     Link(String),
+    #[error("Data Mismatch")]
+    DataMismatch
 }

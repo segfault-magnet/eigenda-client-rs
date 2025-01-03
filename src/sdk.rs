@@ -16,7 +16,7 @@ use crate::{
         disperser_client::DisperserClient,
         AuthenticatedReply, BlobAuthHeader,
     },
-    errors::{BlobStatusError, CommunicationError, ConfigError, EigenClientError},
+    errors::{BlobStatusError, CommunicationError, ConfigError, EigenClientError, VerificationError},
 };
 use byteorder::{BigEndian, ByteOrder};
 use ethereum_types::Address;
@@ -82,7 +82,7 @@ impl RawEigenClient {
                 .map_err(|e| VerificationError::Kzg(e.to_string()))?,
             settlement_layer_confirmation_depth: config.settlement_layer_confirmation_depth,
         };
-        let eth_client = eth_client::EthClient::new(&config.eth_rpc);
+        let eth_client = eth_client::EthClient::new(&config.eigenda_eth_rpc);
 
         let verifier = Verifier::new(verifier_config, eth_client).await?;
         Ok(RawEigenClient {
@@ -120,10 +120,10 @@ impl RawEigenClient {
             .map_err(BlobStatusError::Status)?
             .into_inner();
 
-        match disperser::BlobStatus::try_from(disperse_reply.result)? {
+        match disperser::BlobStatus::try_from(disperse_reply.result).map_err(BlobStatusError::Prost)? {
             disperser::BlobStatus::Failed
             | disperser::BlobStatus::InsufficientSignatures
-            | disperser::BlobStatus::Unknown => Err(EigenClientError::BlobDispatchedFailed),
+            | disperser::BlobStatus::Unknown => Err(BlobStatusError::BlobDispatchedFailed)?,
 
             disperser::BlobStatus::Dispersing
             | disperser::BlobStatus::Processing
@@ -172,10 +172,10 @@ impl RawEigenClient {
             ))?;
         };
 
-        match disperser::BlobStatus::try_from(disperse_reply.result)? {
+        match disperser::BlobStatus::try_from(disperse_reply.result).map_err(BlobStatusError::Prost)? {
             disperser::BlobStatus::Failed
             | disperser::BlobStatus::InsufficientSignatures
-            | disperser::BlobStatus::Unknown => Err(EigenClientError::BlobDispatchedFailed),
+            | disperser::BlobStatus::Unknown => Err(BlobStatusError::BlobDispatchedFailed)?,
 
             disperser::BlobStatus::Dispersing
             | disperser::BlobStatus::Processing
@@ -196,13 +196,13 @@ impl RawEigenClient {
         };
         let blob_info = blob_info::BlobInfo::try_from(blob_info)?;
         let Some(data) = self.get_blob_data(blob_info.clone()).await? else {
-            return Err(EigenClientError::FailedToGetBlobData);
+            return Err(CommunicationError::FailedToGetBlobData)?;
         };
 
-        let data_db = self.get_blob_data.get_blob_data(request_id).await?;
+        let data_db = self.get_blob_data.get_blob_data(request_id).await.map_err(CommunicationError::GetBlobData)?;
         if let Some(data_db) = data_db {
             if data_db != data {
-                return Err(EigenClientError::DataMismatch);
+                return Err(VerificationError::DataMismatch)?;
             }
         }
         self.verifier
@@ -215,7 +215,7 @@ impl RawEigenClient {
         if let Err(e) = result {
             match e {
                 VerificationError::EmptyHash => return Ok(None),
-                _ => return Err(EigenClientError::InclusionData),
+                _ => Err(EigenClientError::Verification(e))?,
             }
         }
         Ok(Some(blob_info))
@@ -338,20 +338,20 @@ impl RawEigenClient {
             .lock()
             .await
             .get_blob_status(polling_request.clone())
-            .await?
+            .await.map_err(BlobStatusError::Status)?
             .into_inner();
 
-        match disperser::BlobStatus::try_from(resp.status)? {
+        match disperser::BlobStatus::try_from(resp.status).map_err(BlobStatusError::Prost)? {
             disperser::BlobStatus::Processing | disperser::BlobStatus::Dispersing => Ok(None),
-            disperser::BlobStatus::Failed => Err(EigenClientError::BlobDispatchedFailed),
+            disperser::BlobStatus::Failed => Err(BlobStatusError::BlobDispatchedFailed)?,
             disperser::BlobStatus::InsufficientSignatures => {
-                Err(EigenClientError::InsufficientSignatures)
+                Err(BlobStatusError::InsufficientSignatures)?
             }
             disperser::BlobStatus::Confirmed => {
                 if !self.config.wait_for_finalization {
                     let blob_info = resp
                         .info
-                        .ok_or_else(|| EigenClientError::NoBlobHeaderInResponse)?;
+                        .ok_or_else(|| BlobStatusError::NoBlobHeaderInResponse)?;
                     return Ok(Some(blob_info));
                 }
                 Ok(None)
@@ -359,11 +359,11 @@ impl RawEigenClient {
             disperser::BlobStatus::Finalized => {
                 let blob_info = resp
                     .info
-                    .ok_or_else(|| EigenClientError::NoBlobHeaderInResponse)?;
+                    .ok_or_else(|| BlobStatusError::NoBlobHeaderInResponse)?;
                 Ok(Some(blob_info))
             }
 
-            _ => Err(EigenClientError::ReceivedUnknownBlobStatus),
+            _ => Err(BlobStatusError::ReceivedUnknownBlobStatus)?,
         }
     }
 

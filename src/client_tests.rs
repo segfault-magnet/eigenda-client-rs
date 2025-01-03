@@ -9,7 +9,7 @@ mod tests {
     use crate::{
         client::GetBlobData,
         config::{EigenConfig, EigenSecrets, PrivateKey},
-        errors::EigenClientError,
+        errors::{CommunicationError, EigenClientError},
         EigenClient,
     };
     use backon::{ConstantBuilder, Retryable};
@@ -43,7 +43,7 @@ mod tests {
         let blob_info = (|| async {
             let blob_info = client.get_commitment(blob_id).await?;
             if blob_info.is_none() {
-                return Err(EigenClientError::FailedToGetBlobData);
+                return Err(EigenClientError::Communication(CommunicationError::FailedToGetBlobData));
             }
             Ok(blob_info.unwrap())
         })
@@ -52,7 +52,7 @@ mod tests {
                 .with_delay(Duration::from_millis(STATUS_QUERY_INTERVAL))
                 .with_max_times((STATUS_QUERY_TIMEOUT / STATUS_QUERY_INTERVAL) as usize),
         )
-        .when(|e| matches!(e, EigenClientError::FailedToGetBlobData))
+        .when(|e| matches!(e, EigenClientError::Communication(CommunicationError::FailedToGetBlobData)))
         .await?;
 
         Ok(blob_info)

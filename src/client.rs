@@ -1,4 +1,4 @@
-use crate::errors::{CommunicationError, ConfigError, EigenClientError};
+use crate::errors::{ConfigError, EigenClientError};
 
 use super::{
     config::{EigenConfig, EigenSecrets},
@@ -36,7 +36,7 @@ impl EigenClient {
         secrets: EigenSecrets,
         get_blob_data: Box<dyn GetBlobData>,
     ) -> Result<Self, EigenClientError> {
-        let private_key = SecretKey::from_str(secrets.private_key.0.expose_secret().as_str()).map_err(ConfigError::Secp)?;;
+        let private_key = SecretKey::from_str(secrets.private_key.0.expose_secret().as_str()).map_err(ConfigError::Secp)?;
 
         let client = RawEigenClient::new(private_key, config, get_blob_data).await?;
         Ok(Self {
