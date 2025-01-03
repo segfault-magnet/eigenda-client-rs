@@ -3,6 +3,7 @@ use tonic::{transport::Error as TonicError, Status};
 
 use crate::{disperser, eth_client::RpcErrorResponse};
 
+/// Errors returned by this crate
 #[derive(Debug, thiserror::Error)]
 pub enum EigenClientError {
     #[error(transparent)]
@@ -48,7 +49,7 @@ pub enum CommunicationError {
     #[error(transparent)]
     Hex(#[from] hex::FromHexError),
     #[error(transparent)]
-    Rlp(#[from] rlp::DecoderError),
+    GetBlobData(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -69,12 +70,14 @@ pub enum BlobStatusError {
     Status(#[from] Status),
 }
 
+/// Errors specific to conversion
 #[derive(Debug, thiserror::Error)]
 pub enum ConversionError {
     #[error("Failed to convert {0}")]
     NotPresent(String),
 }
 
+/// Errors for the EthClient
 #[derive(Debug, thiserror::Error)]
 pub enum EthClientError {
     #[error(transparent)]
@@ -85,6 +88,7 @@ pub enum EthClientError {
     RPC(RpcErrorResponse),
 }
 
+/// Errors for the Verifier
 #[derive(Debug, thiserror::Error)]
 pub enum VerificationError {
     #[error("Service Manager Error: {0}")]
@@ -111,4 +115,6 @@ pub enum VerificationError {
     CommitmentNotOnCorrectSubgroup,
     #[error("Link Error: {0}")]
     Link(String),
+    #[error("Data Mismatch")]
+    DataMismatch,
 }
