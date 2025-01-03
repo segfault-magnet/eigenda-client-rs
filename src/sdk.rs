@@ -16,7 +16,7 @@ use crate::{
         disperser_client::DisperserClient,
         AuthenticatedReply, BlobAuthHeader,
     },
-    errors::{EigenClientError, VerificationError},
+    errors::{BlobStatusError, CommunicationError, ConfigError, EigenClientError},
 };
 use byteorder::{BigEndian, ByteOrder};
 use ethereum_types::Address;
@@ -62,9 +62,15 @@ impl RawEigenClient {
         config: EigenConfig,
         get_blob_data: Box<dyn GetBlobData>,
     ) -> Result<Self, EigenClientError> {
-        let endpoint =
-            Endpoint::from_str(config.disperser_rpc.as_str())?.tls_config(ClientTlsConfig::new())?;
-        let client = Arc::new(Mutex::new(DisperserClient::connect(endpoint).await?));
+        let endpoint = Endpoint::from_str(config.disperser_rpc.as_str())
+            .map_err(ConfigError::Tonic)?
+            .tls_config(ClientTlsConfig::new())
+            .map_err(ConfigError::Tonic)?;
+        let client = Arc::new(Mutex::new(
+            DisperserClient::connect(endpoint)
+                .await
+                .map_err(ConfigError::Tonic)?,
+        ));
 
         let verifier_config = VerifierConfig {
             svc_manager_addr: Address::from_str(&config.eigenda_svc_manager_address)
@@ -76,7 +82,7 @@ impl RawEigenClient {
                 .map_err(|e| VerificationError::Kzg(e.to_string()))?,
             settlement_layer_confirmation_depth: config.settlement_layer_confirmation_depth,
         };
-        let eth_client = eth_client::EthClient::new(&config.eigenda_eth_rpc);
+        let eth_client = eth_client::EthClient::new(&config.eth_rpc);
 
         let verifier = Verifier::new(verifier_config, eth_client).await?;
         Ok(RawEigenClient {
@@ -110,7 +116,8 @@ impl RawEigenClient {
             .lock()
             .await
             .disperse_blob(request)
-            .await?
+            .await
+            .map_err(BlobStatusError::Status)?
             .into_inner();
 
         match disperser::BlobStatus::try_from(disperse_reply.result)? {
@@ -140,7 +147,8 @@ impl RawEigenClient {
             .lock()
             .await
             .disperse_blob_authenticated(UnboundedReceiverStream::new(rx))
-            .await?;
+            .await
+            .map_err(BlobStatusError::Status)?;
         let response_stream = response_stream.get_mut();
 
         // 2. receive BlobAuthHeader
@@ -153,13 +161,15 @@ impl RawEigenClient {
         let reply = response_stream
             .next()
             .await
-            .ok_or_else(|| EigenClientError::NoResponseFromServer)?
+            .ok_or(CommunicationError::NoResponseFromServer)?
             .unwrap()
             .payload
-            .ok_or_else(|| EigenClientError::NoPayloadInResponse)?;
+            .ok_or(CommunicationError::NoPayloadInResponse)?;
 
         let disperser::authenticated_reply::Payload::DisperseReply(disperse_reply) = reply else {
-            return Err(EigenClientError::UnexpectedResponseFromServer);
+            return Err(CommunicationError::ErrorFromServer(
+                "Unexpected response".to_string(),
+            ))?;
         };
 
         match disperser::BlobStatus::try_from(disperse_reply.result)? {
@@ -246,8 +256,8 @@ impl RawEigenClient {
             })),
         };
 
-        tx.send(req)
-            .map_err(|e| EigenClientError::DisperseBlob(format!("{}", e)))
+        tx.send(req).map_err(CommunicationError::DisperseBlob)?;
+        Ok(())
     }
 
     fn keccak256(&self, input: &[u8]) -> [u8; 32] {
@@ -269,7 +279,7 @@ impl RawEigenClient {
         let digest = self.keccak256(&buf);
         let signature: RecoverableSignature = secp256k1::Secp256k1::signing_only()
             .sign_ecdsa_recoverable(
-                &secp256k1::Message::from_slice(&digest[..])?,
+                &secp256k1::Message::from_slice(&digest[..]).map_err(CommunicationError::Secp)?,
                 &self.private_key,
             );
         let (recovery_id, sig) = signature.serialize_compact();
@@ -285,7 +295,8 @@ impl RawEigenClient {
         };
 
         tx.send(req)
-            .map_err(|e| EigenClientError::AuthenticationData(format!("{}", e)))
+            .map_err(CommunicationError::AuthenticationData)?;
+        Ok(())
     }
 
     async fn receive_blob_auth_header(
@@ -295,20 +306,22 @@ impl RawEigenClient {
         let reply = response_stream
             .next()
             .await
-            .ok_or_else(|| EigenClientError::NoResponseFromServer)?;
+            .ok_or(CommunicationError::NoResponseFromServer)?;
 
         let Ok(reply) = reply else {
-            return Err(EigenClientError::ErrorFromServer(format!("{:?}", reply)));
+            return Err(CommunicationError::ErrorFromServer(format!("{:?}", reply)))?;
         };
 
         let reply = reply
             .payload
-            .ok_or_else(|| EigenClientError::NoPayloadInResponse)?;
+            .ok_or(CommunicationError::NoPayloadInResponse)?;
 
         if let disperser::authenticated_reply::Payload::BlobAuthHeader(blob_auth_header) = reply {
             Ok(blob_auth_header)
         } else {
-            Err(EigenClientError::UnexpectedResponseFromServer)
+            Err(CommunicationError::ErrorFromServer(
+                "Unexpected Response".to_string(),
+            ))?
         }
     }
 
@@ -317,7 +330,7 @@ impl RawEigenClient {
         request_id: String,
     ) -> Result<Option<DisperserBlobInfo>, EigenClientError> {
         let polling_request = disperser::BlobStatusRequest {
-            request_id: hex::decode(request_id)?,
+            request_id: hex::decode(request_id).map_err(CommunicationError::Hex)?,
         };
 
         let resp = self
@@ -372,11 +385,12 @@ impl RawEigenClient {
                 batch_header_hash,
                 blob_index,
             })
-            .await?
+            .await
+            .map_err(BlobStatusError::Status)?
             .into_inner();
 
         if get_response.data.is_empty() {
-            return Err(EigenClientError::FailedToGetBlobData);
+            return Err(CommunicationError::FailedToGetBlobData)?;
         }
 
         let data = remove_empty_byte_from_padded_bytes(&get_response.data);

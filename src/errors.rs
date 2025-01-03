@@ -1,4 +1,7 @@
+use tokio::sync::mpsc::error::SendError;
 use tonic::{transport::Error as TonicError, Status};
+
+use crate::{disperser, eth_client::RpcErrorResponse};
 
 /// Errors returned by this crate
 #[derive(Debug, thiserror::Error)]
@@ -7,30 +10,48 @@ pub enum EigenClientError {
     EthClient(#[from] EthClientError),
     #[error(transparent)]
     Verification(#[from] VerificationError),
+    #[error(transparent)]
+    Communication(#[from] CommunicationError),
+    #[error(transparent)]
+    BlobStatus(#[from] BlobStatusError),
+    #[error(transparent)]
+    Conversion(#[from] ConversionError),
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
     #[error("Private Key Error")]
     PrivateKey,
     #[error(transparent)]
     Secp(#[from] secp256k1::Error),
     #[error(transparent)]
-    Hex(#[from] hex::FromHexError),
-    #[error(transparent)]
     Tonic(#[from] TonicError),
-    #[error(transparent)]
-    Status(#[from] Status),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CommunicationError {
     #[error("No response from server")]
     NoResponseFromServer,
     #[error("No payload in response")]
     NoPayloadInResponse,
-    #[error("Unexpected response from server")]
-    UnexpectedResponseFromServer,
     #[error("Failed to get blob data")]
     FailedToGetBlobData,
     #[error("Failed to send DisperseBlobRequest: {0}")]
-    DisperseBlob(String),
+    DisperseBlob(SendError<disperser::AuthenticatedRequest>),
     #[error("Failed to send AuthenticationData: {0}")]
-    AuthenticationData(String),
+    AuthenticationData(SendError<disperser::AuthenticatedRequest>),
     #[error("Error from server: {0}")]
     ErrorFromServer(String),
+    #[error(transparent)]
+    Secp(#[from] secp256k1::Error),
+    #[error(transparent)]
+    Hex(#[from] hex::FromHexError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum BlobStatusError {
     #[error("Blob still processing")]
     BlobStillProcessing,
     #[error("Blob dispatched failed")]
@@ -42,17 +63,9 @@ pub enum EigenClientError {
     #[error("Received unknown blob status")]
     ReceivedUnknownBlobStatus,
     #[error(transparent)]
-    Conversion(#[from] ConversionError),
-    #[error(transparent)]
     Prost(#[from] prost::DecodeError),
-    #[error("Data provided does not match the expected data")]
-    DataMismatch,
-    #[error("Failed to verify inclusion data")]
-    InclusionData,
-    #[error("Failed to get blob data")]
-    GetBlobData,
-    #[error("Failed at get blob function {0}")]
-    GetBlobFunction(#[from] Box<dyn std::error::Error + Send + Sync>),
+    #[error(transparent)]
+    Status(#[from] Status),
 }
 
 /// Errors specific to conversion
@@ -65,14 +78,12 @@ pub enum ConversionError {
 /// Errors for the EthClient
 #[derive(Debug, thiserror::Error)]
 pub enum EthClientError {
-    #[error("Failed to serialize request body: {0}")]
-    FailedToSerializeRequestBody(String),
     #[error(transparent)]
     HTTPClient(#[from] reqwest::Error),
     #[error(transparent)]
     SerdeJSON(#[from] serde_json::Error),
     #[error("RPC: {0}")]
-    RPC(String),
+    RPC(RpcErrorResponse),
 }
 
 /// Errors for the Verifier

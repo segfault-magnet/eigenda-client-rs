@@ -1,18 +1,18 @@
 use secrecy::{ExposeSecret, Secret};
 use std::str::FromStr;
 
-use crate::errors::EigenClientError;
+use crate::errors::{ConfigError, EigenClientError};
 
 /// Configuration for the EigenDA remote disperser client.
 #[derive(Clone, Debug, PartialEq)]
 pub struct EigenConfig {
     /// URL of the Disperser RPC server
     pub disperser_rpc: String,
-    /// Block height needed to reach in order to consider the blob finalized
-    /// a value less or equal to 0 means that the disperser will not wait for finalization
-    pub settlement_layer_confirmation_depth: u32,
     /// URL of the Ethereum RPC server
     pub eigenda_eth_rpc: String,
+    /// Block height needed to reach in order to consider the blob finalized
+    /// a value less or equal to 0 means that the disperser will not wait for finalization
+    pub settlement_layer_confirmation_depth: i32,
     /// Address of the service manager contract
     pub eigenda_svc_manager_address: String,
     /// Wait for the blob to be finalized before returning the response
@@ -60,8 +60,6 @@ impl FromStr for PrivateKey {
     type Err = EigenClientError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(PrivateKey(
-            s.parse().map_err(|_| EigenClientError::PrivateKey)?,
-        ))
+        Ok(PrivateKey(s.parse().map_err(|_| ConfigError::PrivateKey)?))
     }
 }
