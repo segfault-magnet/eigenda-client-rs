@@ -1,6 +1,6 @@
-use std::fmt;
-
 use rlp::{Decodable, DecoderError, Encodable, Rlp, RlpStream};
+
+use crate::errors::ConversionError;
 
 use super::{
     common::G1Commitment as DisperserG1Commitment,
@@ -12,35 +12,10 @@ use super::{
     },
 };
 
-#[derive(Debug)]
-pub enum ConversionError {
-    NotPresentError,
-}
-
-impl fmt::Display for ConversionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ConversionError::NotPresentError => write!(f, "Failed to convert BlobInfo"),
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct G1Commitment {
     pub x: Vec<u8>,
     pub y: Vec<u8>,
-}
-
-impl G1Commitment {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = vec![];
-        bytes.extend(&self.x.len().to_be_bytes());
-        bytes.extend(&self.x);
-        bytes.extend(&self.y.len().to_be_bytes());
-        bytes.extend(&self.y);
-
-        bytes
-    }
 }
 
 impl Decodable for G1Commitment {
@@ -75,18 +50,6 @@ pub struct BlobQuorumParam {
     pub adversary_threshold_percentage: u32,
     pub confirmation_threshold_percentage: u32,
     pub chunk_length: u32,
-}
-
-impl BlobQuorumParam {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = vec![];
-        bytes.extend(&self.quorum_number.to_be_bytes());
-        bytes.extend(&self.adversary_threshold_percentage.to_be_bytes());
-        bytes.extend(&self.confirmation_threshold_percentage.to_be_bytes());
-        bytes.extend(&self.chunk_length.to_be_bytes());
-
-        bytes
-    }
 }
 
 impl Decodable for BlobQuorumParam {
@@ -128,21 +91,6 @@ pub struct BlobHeader {
     pub blob_quorum_params: Vec<BlobQuorumParam>,
 }
 
-impl BlobHeader {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = vec![];
-        bytes.extend(self.commitment.to_bytes());
-        bytes.extend(&self.data_length.to_be_bytes());
-        bytes.extend(&self.blob_quorum_params.len().to_be_bytes());
-
-        for quorum in &self.blob_quorum_params {
-            bytes.extend(quorum.to_bytes());
-        }
-
-        bytes
-    }
-}
-
 impl Decodable for BlobHeader {
     fn decode(rlp: &Rlp) -> Result<Self, DecoderError> {
         let commitment: G1Commitment = rlp.val_at(0)?;
@@ -170,7 +118,7 @@ impl TryFrom<DisperserBlobHeader> for BlobHeader {
     type Error = ConversionError;
     fn try_from(value: DisperserBlobHeader) -> Result<Self, Self::Error> {
         if value.commitment.is_none() {
-            return Err(ConversionError::NotPresentError);
+            return Err(ConversionError::NotPresent("BlobHeader".to_string()));
         }
         let blob_quorum_params: Vec<BlobQuorumParam> = value
             .blob_quorum_params
@@ -191,21 +139,6 @@ pub struct BatchHeader {
     pub quorum_numbers: Vec<u8>,
     pub quorum_signed_percentages: Vec<u8>,
     pub reference_block_number: u32,
-}
-
-impl BatchHeader {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = vec![];
-        bytes.extend(&self.batch_root.len().to_be_bytes());
-        bytes.extend(&self.batch_root);
-        bytes.extend(&self.quorum_numbers.len().to_be_bytes());
-        bytes.extend(&self.quorum_numbers);
-        bytes.extend(&self.quorum_signed_percentages.len().to_be_bytes());
-        bytes.extend(&self.quorum_signed_percentages);
-        bytes.extend(&self.reference_block_number.to_be_bytes());
-
-        bytes
-    }
 }
 
 impl Decodable for BatchHeader {
@@ -249,17 +182,6 @@ pub struct BatchMetadata {
     pub batch_header_hash: Vec<u8>,
 }
 
-impl BatchMetadata {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = vec![];
-        bytes.extend(self.batch_header.to_bytes());
-        bytes.extend(&self.signatory_record_hash);
-        bytes.extend(&self.confirmation_block_number.to_be_bytes());
-
-        bytes
-    }
-}
-
 impl Decodable for BatchMetadata {
     fn decode(rlp: &Rlp) -> Result<Self, DecoderError> {
         let batch_header: BatchHeader = rlp.val_at(0)?;
@@ -289,7 +211,7 @@ impl TryFrom<DisperserBatchMetadata> for BatchMetadata {
     type Error = ConversionError;
     fn try_from(value: DisperserBatchMetadata) -> Result<Self, Self::Error> {
         if value.batch_header.is_none() {
-            return Err(ConversionError::NotPresentError);
+            return Err(ConversionError::NotPresent("BatchMetadata".to_string()));
         }
         Ok(Self {
             batch_header: BatchHeader::from(value.batch_header.unwrap()),
@@ -308,21 +230,6 @@ pub struct BlobVerificationProof {
     pub batch_medatada: BatchMetadata,
     pub inclusion_proof: Vec<u8>,
     pub quorum_indexes: Vec<u8>,
-}
-
-impl BlobVerificationProof {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = vec![];
-        bytes.extend(&self.batch_id.to_be_bytes());
-        bytes.extend(&self.blob_index.to_be_bytes());
-        bytes.extend(self.batch_medatada.to_bytes());
-        bytes.extend(&self.inclusion_proof.len().to_be_bytes());
-        bytes.extend(&self.inclusion_proof);
-        bytes.extend(&self.quorum_indexes.len().to_be_bytes());
-        bytes.extend(&self.quorum_indexes);
-
-        bytes
-    }
 }
 
 impl Decodable for BlobVerificationProof {
@@ -352,7 +259,9 @@ impl TryFrom<DisperserBlobVerificationProof> for BlobVerificationProof {
     type Error = ConversionError;
     fn try_from(value: DisperserBlobVerificationProof) -> Result<Self, Self::Error> {
         if value.batch_metadata.is_none() {
-            return Err(ConversionError::NotPresentError);
+            return Err(ConversionError::NotPresent(
+                "BlobVerificationProof".to_string(),
+            ));
         }
         Ok(Self {
             batch_id: value.batch_id,
@@ -368,18 +277,6 @@ impl TryFrom<DisperserBlobVerificationProof> for BlobVerificationProof {
 pub struct BlobInfo {
     pub blob_header: BlobHeader,
     pub blob_verification_proof: BlobVerificationProof,
-}
-
-impl BlobInfo {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = vec![];
-        let blob_header_bytes = self.blob_header.to_bytes();
-        bytes.extend(blob_header_bytes.len().to_be_bytes());
-        bytes.extend(blob_header_bytes);
-        let blob_verification_proof_bytes = self.blob_verification_proof.to_bytes();
-        bytes.extend(blob_verification_proof_bytes);
-        bytes
-    }
 }
 
 impl Decodable for BlobInfo {
@@ -406,7 +303,7 @@ impl TryFrom<DisperserBlobInfo> for BlobInfo {
     type Error = ConversionError;
     fn try_from(value: DisperserBlobInfo) -> Result<Self, Self::Error> {
         if value.blob_header.is_none() || value.blob_verification_proof.is_none() {
-            return Err(ConversionError::NotPresentError);
+            return Err(ConversionError::NotPresent("BlobInfo".to_string()));
         }
         Ok(Self {
             blob_header: BlobHeader::try_from(value.blob_header.unwrap())?,

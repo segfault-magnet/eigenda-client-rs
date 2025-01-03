@@ -5,17 +5,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-#[derive(Debug, thiserror::Error)]
-pub enum EthClientError {
-    #[error("Failed to serialize request body: {0}")]
-    FailedToSerializeRequestBody(String),
-    #[error("reqwest error: {0}")]
-    ReqwestError(#[from] reqwest::Error),
-    #[error("{0}")]
-    SerdeJSONError(#[from] serde_json::Error),
-    #[error("{0}")]
-    RPCError(String),
-}
+use crate::errors::EthClientError;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -44,6 +34,12 @@ pub struct RpcErrorResponse {
     pub id: RpcRequestId,
     pub jsonrpc: String,
     pub error: RpcErrorMetadata,
+}
+
+impl std::fmt::Display for RpcErrorResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RpcErrorResponse: {:?}", self)
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -79,9 +75,7 @@ impl EthClient {
         self.client
             .post(&self.url)
             .header("content-type", "application/json")
-            .body(serde_json::ser::to_string(&request).map_err(|error| {
-                EthClientError::FailedToSerializeRequestBody(format!("{error}: {request:?}"))
-            })?)
+            .body(serde_json::ser::to_string(&request).map_err(EthClientError::SerdeJSON)?)
             .send()
             .await?
             .json::<RpcResponse>()
@@ -99,11 +93,9 @@ impl EthClient {
 
         match self.send_request(request).await {
             Ok(RpcResponse::Success(result)) => {
-                serde_json::from_value(result.result).map_err(EthClientError::SerdeJSONError)
+                serde_json::from_value(result.result).map_err(EthClientError::SerdeJSON)
             }
-            Ok(RpcResponse::Error(error_response)) => {
-                Err(EthClientError::RPCError(error_response.error.message))
-            }
+            Ok(RpcResponse::Error(error_response)) => Err(EthClientError::RPC(error_response)),
             Err(error) => Err(error),
         }
     }
@@ -134,11 +126,9 @@ impl EthClient {
 
         match self.send_request(request).await {
             Ok(RpcResponse::Success(result)) => {
-                serde_json::from_value(result.result).map_err(EthClientError::SerdeJSONError)
+                serde_json::from_value(result.result).map_err(EthClientError::SerdeJSON)
             }
-            Ok(RpcResponse::Error(error_response)) => {
-                Err(EthClientError::RPCError(error_response.error.message))
-            }
+            Ok(RpcResponse::Error(error_response)) => Err(EthClientError::RPC(error_response)),
             Err(error) => Err(error),
         }
     }

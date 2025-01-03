@@ -15,6 +15,7 @@ use crate::{
         disperser_client::DisperserClient,
         AuthenticatedReply, BlobAuthHeader,
     },
+    errors::{BlobStatusError, CommunicationError, ConfigError, EigenClientError},
 };
 use backon::{ConstantBuilder, Retryable};
 use byteorder::{BigEndian, ByteOrder};
@@ -44,10 +45,19 @@ pub(crate) const AVG_BLOCK_TIME: u64 = 12;
 impl RawEigenClient {
     const BLOB_SIZE_LIMIT: usize = 1024 * 1024 * 2; // 2 MB
 
-    pub async fn new(private_key: SecretKey, config: EigenConfig) -> anyhow::Result<Self> {
-        let endpoint =
-            Endpoint::from_str(config.disperser_rpc.as_str())?.tls_config(ClientTlsConfig::new())?;
-        let client = Arc::new(Mutex::new(DisperserClient::connect(endpoint).await?));
+    pub async fn new(
+        private_key: SecretKey,
+        config: EigenConfig,
+    ) -> Result<Self, EigenClientError> {
+        let endpoint = Endpoint::from_str(config.disperser_rpc.as_str())
+            .map_err(ConfigError::Tonic)?
+            .tls_config(ClientTlsConfig::new())
+            .map_err(ConfigError::Tonic)?;
+        let client = Arc::new(Mutex::new(
+            DisperserClient::connect(endpoint)
+                .await
+                .map_err(ConfigError::Tonic)?,
+        ));
 
         let verifier_config = VerifierConfig {
             svc_manager_addr: config.eigenda_svc_manager_address.clone(),
@@ -58,9 +68,7 @@ impl RawEigenClient {
         };
         let eth_client = eth_client::EthClient::new(&config.eth_rpc);
 
-        let verifier = Verifier::new(verifier_config, eth_client)
-            .await
-            .map_err(|e| anyhow::anyhow!(format!("Failed to create verifier {:?}", e)))?;
+        let verifier = Verifier::new(verifier_config, eth_client).await?;
         Ok(RawEigenClient {
             client,
             private_key,
@@ -73,7 +81,10 @@ impl RawEigenClient {
         Self::BLOB_SIZE_LIMIT
     }
 
-    async fn dispatch_blob_non_authenticated(&self, data: Vec<u8>) -> anyhow::Result<String> {
+    async fn dispatch_blob_non_authenticated(
+        &self,
+        data: Vec<u8>,
+    ) -> Result<String, EigenClientError> {
         let padded_data = convert_by_padding_empty_byte(&data);
         let request = disperser::DisperseBlobRequest {
             data: padded_data,
@@ -86,7 +97,8 @@ impl RawEigenClient {
             .lock()
             .await
             .disperse_blob(request)
-            .await?
+            .await
+            .map_err(BlobStatusError::Status)?
             .into_inner();
 
         Ok(hex::encode(disperse_reply.request_id))
@@ -96,7 +108,7 @@ impl RawEigenClient {
         &self,
         blob_info: BlobInfo,
         disperse_elapsed: Duration,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), EigenClientError> {
         (|| async { self.verifier.verify_certificate(blob_info.clone()).await })
             .retry(
                 &ConstantBuilder::default()
@@ -107,11 +119,12 @@ impl RawEigenClient {
                             as usize,
                     ),
             )
-            .await
-            .map_err(|_| anyhow::anyhow!("Failed to verify certificate"))
+            .await?;
+
+        Ok(())
     }
 
-    async fn dispatch_blob_authenticated(&self, data: Vec<u8>) -> anyhow::Result<String> {
+    async fn dispatch_blob_authenticated(&self, data: Vec<u8>) -> Result<String, EigenClientError> {
         let (tx, rx) = mpsc::unbounded_channel();
 
         // 1. send DisperseBlobRequest
@@ -125,7 +138,8 @@ impl RawEigenClient {
             .lock()
             .await
             .disperse_blob_authenticated(UnboundedReceiverStream::new(rx))
-            .await?;
+            .await
+            .map_err(BlobStatusError::Status)?;
         let response_stream = response_stream.get_mut();
 
         // 2. receive BlobAuthHeader
@@ -138,43 +152,42 @@ impl RawEigenClient {
         let reply = response_stream
             .next()
             .await
-            .ok_or_else(|| anyhow::anyhow!("No response from server"))?
+            .ok_or(CommunicationError::NoResponseFromServer)?
             .unwrap()
             .payload
-            .ok_or_else(|| anyhow::anyhow!("No payload in response"))?;
+            .ok_or(CommunicationError::NoPayloadInResponse)?;
 
         let disperser::authenticated_reply::Payload::DisperseReply(disperse_reply) = reply else {
-            return Err(anyhow::anyhow!("Unexpected response from server"));
+            return Err(CommunicationError::ErrorFromServer(
+                "Unexpected response".to_string(),
+            ))?;
         };
         Ok(hex::encode(disperse_reply.request_id))
     }
 
-    pub async fn get_inclusion_data(&self, blob_id: &str) -> anyhow::Result<String> {
+    pub async fn get_inclusion_data(&self, blob_id: &str) -> Result<String, EigenClientError> {
         let disperse_time = Instant::now();
         let blob_info = self.await_for_inclusion(blob_id.to_string()).await?;
 
-        let blob_info = blob_info::BlobInfo::try_from(blob_info)
-            .map_err(|e| anyhow::anyhow!("Failed to convert blob info: {}", e))?;
+        let blob_info = blob_info::BlobInfo::try_from(blob_info)?;
 
         let disperse_elapsed = Instant::now() - disperse_time;
         let data = self
             .get_blob_data(&hex::encode(rlp::encode(&blob_info)))
             .await?;
         if data.is_none() {
-            return Err(anyhow::anyhow!("Failed to get blob data"));
+            return Err(CommunicationError::FailedToGetBlobData)?;
         }
         self.verifier
-            .verify_commitment(blob_info.blob_header.commitment.clone(), data.unwrap())
-            .map_err(|_| anyhow::anyhow!("Failed to verify commitment"))?;
+            .verify_commitment(blob_info.blob_header.commitment.clone(), data.unwrap())?;
 
         self.perform_verification(blob_info.clone(), disperse_elapsed)
             .await?;
 
-        let verification_proof = blob_info.blob_verification_proof.clone();
         Ok(hex::encode(rlp::encode(&blob_info)))
     }
 
-    pub async fn dispatch_blob(&self, data: Vec<u8>) -> anyhow::Result<String> {
+    pub async fn dispatch_blob(&self, data: Vec<u8>) -> Result<String, EigenClientError> {
         if self.config.authenticated {
             self.dispatch_blob_authenticated(data).await
         } else {
@@ -186,7 +199,7 @@ impl RawEigenClient {
         &self,
         data: Vec<u8>,
         tx: &mpsc::UnboundedSender<disperser::AuthenticatedRequest>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), EigenClientError> {
         let req = disperser::AuthenticatedRequest {
             payload: Some(DisperseRequest(disperser::DisperseBlobRequest {
                 data,
@@ -195,8 +208,8 @@ impl RawEigenClient {
             })),
         };
 
-        tx.send(req)
-            .map_err(|e| anyhow::anyhow!("Failed to send DisperseBlobRequest: {}", e))
+        tx.send(req).map_err(CommunicationError::DisperseBlob)?;
+        Ok(())
     }
 
     fn keccak256(&self, input: &[u8]) -> [u8; 32] {
@@ -211,14 +224,14 @@ impl RawEigenClient {
         &self,
         blob_auth_header: BlobAuthHeader,
         tx: &mpsc::UnboundedSender<disperser::AuthenticatedRequest>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), EigenClientError> {
         // TODO: replace challenge_parameter with actual auth header when it is available
         let mut buf = [0u8; 4];
         BigEndian::write_u32(&mut buf, blob_auth_header.challenge_parameter);
         let digest = self.keccak256(&buf);
         let signature: RecoverableSignature = secp256k1::Secp256k1::signing_only()
             .sign_ecdsa_recoverable(
-                &secp256k1::Message::from_slice(&digest[..])?,
+                &secp256k1::Message::from_slice(&digest[..]).map_err(CommunicationError::Secp)?,
                 &self.private_key,
             );
         let (recovery_id, sig) = signature.serialize_compact();
@@ -234,36 +247,42 @@ impl RawEigenClient {
         };
 
         tx.send(req)
-            .map_err(|e| anyhow::anyhow!("Failed to send AuthenticationData: {}", e))
+            .map_err(CommunicationError::AuthenticationData)?;
+        Ok(())
     }
 
     async fn receive_blob_auth_header(
         &self,
         response_stream: &mut Streaming<AuthenticatedReply>,
-    ) -> anyhow::Result<disperser::BlobAuthHeader> {
+    ) -> Result<disperser::BlobAuthHeader, EigenClientError> {
         let reply = response_stream
             .next()
             .await
-            .ok_or_else(|| anyhow::anyhow!("No response from server"))?;
+            .ok_or(CommunicationError::NoResponseFromServer)?;
 
         let Ok(reply) = reply else {
-            return Err(anyhow::anyhow!("Err from server: {:?}", reply));
+            return Err(CommunicationError::ErrorFromServer(format!("{:?}", reply)))?;
         };
 
         let reply = reply
             .payload
-            .ok_or_else(|| anyhow::anyhow!("No payload in response"))?;
+            .ok_or(CommunicationError::NoPayloadInResponse)?;
 
         if let disperser::authenticated_reply::Payload::BlobAuthHeader(blob_auth_header) = reply {
             Ok(blob_auth_header)
         } else {
-            Err(anyhow::anyhow!("Unexpected response from server"))
+            Err(CommunicationError::ErrorFromServer(
+                "Unexpected Response".to_string(),
+            ))?
         }
     }
 
-    async fn await_for_inclusion(&self, request_id: String) -> anyhow::Result<DisperserBlobInfo> {
+    async fn await_for_inclusion(
+        &self,
+        request_id: String,
+    ) -> Result<DisperserBlobInfo, EigenClientError> {
         let polling_request = disperser::BlobStatusRequest {
-            request_id: hex::decode(request_id)?,
+            request_id: hex::decode(request_id).map_err(CommunicationError::Hex)?,
         };
 
         let blob_info = (|| async {
@@ -277,29 +296,29 @@ impl RawEigenClient {
 
             match disperser::BlobStatus::try_from(resp.status)? {
                 disperser::BlobStatus::Processing | disperser::BlobStatus::Dispersing => {
-                    Err(anyhow::anyhow!("Blob is still processing"))
+                    Err(BlobStatusError::BlobStillProcessing)
                 }
-                disperser::BlobStatus::Failed => Err(anyhow::anyhow!("Blob dispatch failed")),
+                disperser::BlobStatus::Failed => Err(BlobStatusError::BlobDispatchedFailed),
                 disperser::BlobStatus::InsufficientSignatures => {
-                    Err(anyhow::anyhow!("Insufficient signatures"))
+                    Err(BlobStatusError::InsufficientSignatures)
                 }
                 disperser::BlobStatus::Confirmed => {
                     if !self.config.wait_for_finalization {
                         let blob_info = resp
                             .info
-                            .ok_or_else(|| anyhow::anyhow!("No blob header in response"))?;
+                            .ok_or_else(|| BlobStatusError::NoBlobHeaderInResponse)?;
                         return Ok(blob_info);
                     }
-                    Err(anyhow::anyhow!("Blob is still processing"))
+                    Err(BlobStatusError::BlobStillProcessing)
                 }
                 disperser::BlobStatus::Finalized => {
                     let blob_info = resp
                         .info
-                        .ok_or_else(|| anyhow::anyhow!("No blob header in response"))?;
+                        .ok_or_else(|| BlobStatusError::NoBlobHeaderInResponse)?;
                     Ok(blob_info)
                 }
 
-                _ => Err(anyhow::anyhow!("Received unknown blob status")),
+                _ => Err(BlobStatusError::ReceivedUnknownBlobStatus),
             }
         })
         .retry(
@@ -310,15 +329,18 @@ impl RawEigenClient {
                         as usize,
                 ),
         )
-        .when(|e| e.to_string().contains("Blob is still processing"))
+        .when(|e| matches!(e, BlobStatusError::BlobStillProcessing))
         .await?;
 
         Ok(blob_info)
     }
 
-    pub async fn get_blob_data(&self, blob_info: &str) -> anyhow::Result<Option<Vec<u8>>> {
-        let commit = hex::decode(blob_info)?;
-        let blob_info: BlobInfo = rlp::decode(&commit)?;
+    pub async fn get_blob_data(
+        &self,
+        blob_info: &str,
+    ) -> Result<Option<Vec<u8>>, EigenClientError> {
+        let commit = hex::decode(blob_info).map_err(CommunicationError::Hex)?;
+        let blob_info: BlobInfo = rlp::decode(&commit).map_err(CommunicationError::Rlp)?;
         let blob_index = blob_info.blob_verification_proof.blob_index;
         let batch_header_hash = blob_info
             .blob_verification_proof
@@ -332,11 +354,12 @@ impl RawEigenClient {
                 batch_header_hash,
                 blob_index,
             })
-            .await?
+            .await
+            .map_err(BlobStatusError::Status)?
             .into_inner();
 
         if get_response.data.is_empty() {
-            return Err(anyhow::anyhow!("Failed to get blob data"));
+            return Err(CommunicationError::FailedToGetBlobData)?;
         }
 
         let data = remove_empty_byte_from_padded_bytes(&get_response.data);

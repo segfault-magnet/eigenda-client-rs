@@ -1,3 +1,5 @@
+use crate::errors::{CommunicationError, ConfigError, EigenClientError};
+
 use super::{
     blob_info::BlobInfo,
     config::{EigenConfig, EigenSecrets},
@@ -14,9 +16,9 @@ pub struct EigenClient {
 }
 
 impl EigenClient {
-    pub async fn new(config: EigenConfig, secrets: EigenSecrets) -> anyhow::Result<Self> {
+    pub async fn new(config: EigenConfig, secrets: EigenSecrets) -> Result<Self, EigenClientError> {
         let private_key = SecretKey::from_str(secrets.private_key.0.expose_secret().as_str())
-            .map_err(|e| anyhow::anyhow!("Failed to parse private key: {}", e))?;
+            .map_err(ConfigError::Secp)?;
 
         let client = RawEigenClient::new(private_key, config).await?;
         Ok(Self {
@@ -24,26 +26,27 @@ impl EigenClient {
         })
     }
 
-    pub async fn get_commitment(&self, blob_id: &str) -> anyhow::Result<String> {
+    pub async fn get_commitment(&self, blob_id: &str) -> Result<String, EigenClientError> {
         let blob_info = self.client.get_inclusion_data(blob_id).await?;
         Ok(blob_info)
     }
 
-    async fn dispatch_blob(&self, data: Vec<u8>) -> anyhow::Result<String> {
+    pub async fn dispatch_blob(&self, data: Vec<u8>) -> Result<String, EigenClientError> {
         let blob_id = self.client.dispatch_blob(data).await?;
 
         Ok(blob_id)
     }
 
-    async fn get_inclusion_data(&self, blob_id: &str) -> anyhow::Result<Vec<u8>> {
+    pub async fn get_inclusion_data(&self, blob_id: &str) -> Result<Vec<u8>, EigenClientError> {
         let blob_info = self.get_commitment(blob_id).await?;
-        let rlp_encoded_bytes = hex::decode(blob_info)?;
-        let blob_info: BlobInfo = rlp::decode(&rlp_encoded_bytes)?;
+        let rlp_encoded_bytes = hex::decode(blob_info).map_err(CommunicationError::Hex)?;
+        let blob_info: BlobInfo =
+            rlp::decode(&rlp_encoded_bytes).map_err(CommunicationError::Rlp)?;
         let inclusion_data = blob_info.blob_verification_proof.inclusion_proof;
         Ok(inclusion_data)
     }
 
-    fn blob_size_limit(&self) -> Option<usize> {
+    pub fn blob_size_limit(&self) -> Option<usize> {
         Some(RawEigenClient::blob_size_limit())
     }
 }
@@ -61,7 +64,10 @@ mod tests {
     use crate::blob_info::BlobInfo;
 
     impl EigenClient {
-        pub async fn get_blob_data(&self, blob_id: &str) -> anyhow::Result<Option<Vec<u8>>> {
+        pub async fn get_blob_data(
+            &self,
+            blob_id: &str,
+        ) -> Result<Option<Vec<u8>>, EigenClientError> {
             self.client.get_blob_data(blob_id).await
         }
     }
