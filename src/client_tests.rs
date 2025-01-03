@@ -1,7 +1,7 @@
 /// EigenDA Client tests are ignored by default, because they require a remote dependency,
 /// which may not always be available, causing tests to be flaky.
 /// To run these tests, use the following command:
-/// `cargo test -p zksync_da_clients -- --ignored`
+/// `cargo test client_tests -- --ignored`
 #[cfg(test)]
 mod tests {
     use std::{str::FromStr, time::Duration};

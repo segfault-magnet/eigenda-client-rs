@@ -26,7 +26,7 @@ mod test {
     /// Used to avoid making actual calls to a remote disperser
     /// and possible making the CI fail due to network issues.
     /// To run tests with the actual verifier run:
-    /// `cargo test -p zksync_da_clients -- --ignored`
+    /// `cargo test verifier_tests -- --ignored`
     #[derive(Debug)]
     pub(crate) struct MockVerifierClient {
         replies: HashMap<String, bytes::Bytes>,
