@@ -16,7 +16,9 @@ use crate::{
         disperser_client::DisperserClient,
         AuthenticatedReply, BlobAuthHeader,
     },
-    errors::{BlobStatusError, CommunicationError, ConfigError, EigenClientError, VerificationError},
+    errors::{
+        BlobStatusError, CommunicationError, ConfigError, EigenClientError, VerificationError,
+    },
 };
 use byteorder::{BigEndian, ByteOrder};
 use ethereum_types::Address;
@@ -120,7 +122,9 @@ impl RawEigenClient {
             .map_err(BlobStatusError::Status)?
             .into_inner();
 
-        match disperser::BlobStatus::try_from(disperse_reply.result).map_err(BlobStatusError::Prost)? {
+        match disperser::BlobStatus::try_from(disperse_reply.result)
+            .map_err(BlobStatusError::Prost)?
+        {
             disperser::BlobStatus::Failed
             | disperser::BlobStatus::InsufficientSignatures
             | disperser::BlobStatus::Unknown => Err(BlobStatusError::BlobDispatchedFailed)?,
@@ -172,7 +176,9 @@ impl RawEigenClient {
             ))?;
         };
 
-        match disperser::BlobStatus::try_from(disperse_reply.result).map_err(BlobStatusError::Prost)? {
+        match disperser::BlobStatus::try_from(disperse_reply.result)
+            .map_err(BlobStatusError::Prost)?
+        {
             disperser::BlobStatus::Failed
             | disperser::BlobStatus::InsufficientSignatures
             | disperser::BlobStatus::Unknown => Err(BlobStatusError::BlobDispatchedFailed)?,
@@ -199,7 +205,11 @@ impl RawEigenClient {
             return Err(CommunicationError::FailedToGetBlobData)?;
         };
 
-        let data_db = self.get_blob_data.get_blob_data(request_id).await.map_err(CommunicationError::GetBlobData)?;
+        let data_db = self
+            .get_blob_data
+            .get_blob_data(request_id)
+            .await
+            .map_err(CommunicationError::GetBlobData)?;
         if let Some(data_db) = data_db {
             if data_db != data {
                 return Err(VerificationError::DataMismatch)?;
@@ -338,7 +348,8 @@ impl RawEigenClient {
             .lock()
             .await
             .get_blob_status(polling_request.clone())
-            .await.map_err(BlobStatusError::Status)?
+            .await
+            .map_err(BlobStatusError::Status)?
             .into_inner();
 
         match disperser::BlobStatus::try_from(resp.status).map_err(BlobStatusError::Prost)? {

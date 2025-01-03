@@ -116,5 +116,5 @@ pub enum VerificationError {
     #[error("Link Error: {0}")]
     Link(String),
     #[error("Data Mismatch")]
-    DataMismatch
+    DataMismatch,
 }
