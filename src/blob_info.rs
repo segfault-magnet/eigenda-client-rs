@@ -1,8 +1,8 @@
 use crate::errors::ConversionError;
 
 use super::{
-    common::G1Commitment as DisperserG1Commitment,
-    disperser::{
+    generated::common::G1Commitment as DisperserG1Commitment,
+    generated::disperser::{
         BatchHeader as DisperserBatchHeader, BatchMetadata as DisperserBatchMetadata,
         BlobHeader as DisperserBlobHeader, BlobInfo as DisperserBlobInfo,
         BlobQuorumParam as DisperserBlobQuorumParam,

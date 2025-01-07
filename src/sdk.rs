@@ -3,21 +3,21 @@ use std::{str::FromStr, sync::Arc};
 use super::{
     blob_info::BlobInfo,
     config::EigenConfig,
-    disperser::BlobInfo as DisperserBlobInfo,
     eth_client,
+    generated::disperser::BlobInfo as DisperserBlobInfo,
     verifier::{Verifier, VerifierConfig},
 };
 use crate::{
     blob_info,
     client::GetBlobData,
-    disperser::{
+    errors::{
+        BlobStatusError, CommunicationError, ConfigError, EigenClientError, VerificationError,
+    },
+    generated::disperser::{
         self,
         authenticated_request::Payload::{AuthenticationData, DisperseRequest},
         disperser_client::DisperserClient,
         AuthenticatedReply, BlobAuthHeader,
-    },
-    errors::{
-        BlobStatusError, CommunicationError, ConfigError, EigenClientError, VerificationError,
     },
 };
 use byteorder::{BigEndian, ByteOrder};

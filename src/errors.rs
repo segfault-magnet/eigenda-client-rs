@@ -1,7 +1,7 @@
 use tokio::sync::mpsc::error::SendError;
 use tonic::{transport::Error as TonicError, Status};
 
-use crate::{disperser, eth_client::RpcErrorResponse};
+use crate::{eth_client::RpcErrorResponse, generated::disperser};
 
 /// Errors returned by this crate
 #[derive(Debug, thiserror::Error)]

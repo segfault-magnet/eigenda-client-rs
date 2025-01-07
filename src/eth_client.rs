@@ -1,7 +1,7 @@
+//! This client is inspired in ethrex EthClient https://github.com/lambdaclass/ethrex/blob/1d3ae1edf2dd40702c69bb09d8def3a0c0047ff8/crates/l2/sdk/src/eth_client/mod.rs
+//! We use this low level client in order to avoid adding unnecessary dependencies that would make the compile time longer
 use bytes::Bytes;
 use ethereum_types::{Address, U256};
-/// This client is inspired in ethrex EthClient https://github.com/lambdaclass/ethrex/blob/main/crates/l2/utils/eth_client/mod.rs
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -66,7 +66,7 @@ pub(crate) struct RpcRequest {
 /// Client for interacting with an Ethereum node
 #[derive(Debug, Clone)]
 pub(crate) struct EthClient {
-    client: Client,
+    client: reqwest::Client,
     pub(crate) url: String,
 }
 
@@ -74,7 +74,7 @@ impl EthClient {
     /// Creates a new EthClient
     pub(crate) fn new(url: &str) -> Self {
         Self {
-            client: Client::new(),
+            client: reqwest::Client::new(),
             url: url.to_string(),
         }
     }
