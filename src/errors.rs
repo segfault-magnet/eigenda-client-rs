@@ -40,7 +40,7 @@ pub enum CommunicationError {
     #[error("No payload in response")]
     NoPayloadInResponse,
     #[error("Failed to get blob data")]
-    FailedToGetBlobData,
+    FailedToGetBlob,
     #[error("Failed to send DisperseBlobRequest: {0}")]
     DisperseBlob(SendError<disperser::AuthenticatedRequest>),
     #[error("Failed to send AuthenticationData: {0}")]
@@ -52,7 +52,7 @@ pub enum CommunicationError {
     #[error(transparent)]
     Hex(#[from] hex::FromHexError),
     #[error(transparent)]
-    GetBlobData(#[from] Box<dyn std::error::Error + Send + Sync>),
+    BlobProvider(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
 #[derive(Debug, thiserror::Error)]

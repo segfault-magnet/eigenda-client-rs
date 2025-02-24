@@ -7,10 +7,10 @@ mod tests {
     use std::{str::FromStr, sync::Arc, time::Duration};
 
     use crate::{
-        client::GetBlobData,
+        client::BlobProvider,
         config::{EigenConfig, EigenSecrets, PrivateKey},
         errors::{CommunicationError, EigenClientError},
-        EigenClient,
+        test_eigenda_config, EigenClient,
     };
     use backon::{ConstantBuilder, Retryable};
     use serial_test::serial;
@@ -18,11 +18,11 @@ mod tests {
     use crate::blob_info::BlobInfo;
 
     impl EigenClient {
-        pub(crate) async fn get_blob_data(
+        pub(crate) async fn get_blob(
             &self,
             blob_id: BlobInfo,
         ) -> Result<Option<Vec<u8>>, EigenClientError> {
-            self.client.get_blob_data(blob_id).await
+            self.client.get_blob(blob_id).await
         }
 
         pub(crate) async fn get_commitment(
@@ -44,7 +44,7 @@ mod tests {
             let blob_info = client.get_commitment(blob_id).await?;
             if blob_info.is_none() {
                 return Err(EigenClientError::Communication(
-                    CommunicationError::FailedToGetBlobData,
+                    CommunicationError::FailedToGetBlob,
                 ));
             }
             Ok(blob_info.unwrap())
@@ -57,7 +57,7 @@ mod tests {
         .when(|e| {
             matches!(
                 e,
-                EigenClientError::Communication(CommunicationError::FailedToGetBlobData)
+                EigenClientError::Communication(CommunicationError::FailedToGetBlob)
             )
         })
         .await?;
@@ -66,11 +66,11 @@ mod tests {
     }
 
     #[derive(Debug, Clone)]
-    struct MockGetBlobData;
+    struct MockBlobProvider;
 
     #[async_trait::async_trait]
-    impl GetBlobData for MockGetBlobData {
-        async fn get_blob_data(
+    impl BlobProvider for MockBlobProvider {
+        async fn get_blob(
             &self,
             _blob_id: &str,
         ) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error + Send + Sync>> {
@@ -82,14 +82,14 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_non_auth_dispersal() {
-        let config = EigenConfig::default();
+        let config = test_eigenda_config();
         let secrets = EigenSecrets {
             private_key: PrivateKey::from_str(
                 "d08aa7ae1bb5ddd46c3c2d8cdb5894ab9f54dec467233686ca42629e826ac4c6",
             )
             .unwrap(),
         };
-        let client = EigenClient::new(config.clone(), secrets, Arc::new(MockGetBlobData))
+        let client = EigenClient::new(config.clone(), secrets, Arc::new(MockBlobProvider))
             .await
             .unwrap();
         let data = vec![1; 20];
@@ -98,10 +98,8 @@ mod tests {
         let blob_info = get_blob_info(&client, &result).await.unwrap();
         let expected_inclusion_data = blob_info.clone().blob_verification_proof.inclusion_proof;
         let actual_inclusion_data = client.get_inclusion_data(&result).await.unwrap().unwrap();
-        assert!(actual_inclusion_data
-            .windows(expected_inclusion_data.len())
-            .any(|window| window == expected_inclusion_data)); // Checks that the verification proof is included in the inclusion data
-        let retrieved_data = client.get_blob_data(blob_info).await.unwrap();
+        assert_eq!(expected_inclusion_data, actual_inclusion_data);
+        let retrieved_data = client.get_blob(blob_info).await.unwrap();
         assert_eq!(retrieved_data.unwrap(), data);
     }
 
@@ -111,7 +109,7 @@ mod tests {
     async fn test_auth_dispersal() {
         let config = EigenConfig {
             authenticated: true,
-            ..Default::default()
+            ..test_eigenda_config()
         };
         let secrets = EigenSecrets {
             private_key: PrivateKey::from_str(
@@ -119,7 +117,7 @@ mod tests {
             )
             .unwrap(),
         };
-        let client = EigenClient::new(config.clone(), secrets, Arc::new(MockGetBlobData))
+        let client = EigenClient::new(config.clone(), secrets, Arc::new(MockBlobProvider))
             .await
             .unwrap();
         let data = vec![1; 20];
@@ -128,10 +126,8 @@ mod tests {
 
         let expected_inclusion_data = blob_info.clone().blob_verification_proof.inclusion_proof;
         let actual_inclusion_data = client.get_inclusion_data(&result).await.unwrap().unwrap();
-        assert!(actual_inclusion_data
-            .windows(expected_inclusion_data.len())
-            .any(|window| window == expected_inclusion_data)); // Checks that the verification proof is included in the inclusion data
-        let retrieved_data = client.get_blob_data(blob_info).await.unwrap();
+        assert_eq!(expected_inclusion_data, actual_inclusion_data);
+        let retrieved_data = client.get_blob(blob_info).await.unwrap();
         assert_eq!(retrieved_data.unwrap(), data);
     }
 
@@ -142,7 +138,7 @@ mod tests {
         let config = EigenConfig {
             wait_for_finalization: true,
             authenticated: true,
-            ..Default::default()
+            ..test_eigenda_config()
         };
         let secrets = EigenSecrets {
             private_key: PrivateKey::from_str(
@@ -150,7 +146,7 @@ mod tests {
             )
             .unwrap(),
         };
-        let client = EigenClient::new(config.clone(), secrets, Arc::new(MockGetBlobData))
+        let client = EigenClient::new(config.clone(), secrets, Arc::new(MockBlobProvider))
             .await
             .unwrap();
         let data = vec![1; 20];
@@ -159,10 +155,8 @@ mod tests {
 
         let expected_inclusion_data = blob_info.clone().blob_verification_proof.inclusion_proof;
         let actual_inclusion_data = client.get_inclusion_data(&result).await.unwrap().unwrap();
-        assert!(actual_inclusion_data
-            .windows(expected_inclusion_data.len())
-            .any(|window| window == expected_inclusion_data)); // Checks that the verification proof is included in the inclusion data
-        let retrieved_data = client.get_blob_data(blob_info).await.unwrap();
+        assert_eq!(expected_inclusion_data, actual_inclusion_data);
+        let retrieved_data = client.get_blob(blob_info).await.unwrap();
         assert_eq!(retrieved_data.unwrap(), data);
     }
 
@@ -172,7 +166,7 @@ mod tests {
     async fn test_settlement_layer_confirmation_depth() {
         let config = EigenConfig {
             settlement_layer_confirmation_depth: 5,
-            ..Default::default()
+            ..test_eigenda_config()
         };
         let secrets = EigenSecrets {
             private_key: PrivateKey::from_str(
@@ -180,7 +174,7 @@ mod tests {
             )
             .unwrap(),
         };
-        let client = EigenClient::new(config.clone(), secrets, Arc::new(MockGetBlobData))
+        let client = EigenClient::new(config.clone(), secrets, Arc::new(MockBlobProvider))
             .await
             .unwrap();
         let data = vec![1; 20];
@@ -189,10 +183,8 @@ mod tests {
 
         let expected_inclusion_data = blob_info.clone().blob_verification_proof.inclusion_proof;
         let actual_inclusion_data = client.get_inclusion_data(&result).await.unwrap().unwrap();
-        assert!(actual_inclusion_data
-            .windows(expected_inclusion_data.len())
-            .any(|window| window == expected_inclusion_data)); // Checks that the verification proof is included in the inclusion data
-        let retrieved_data = client.get_blob_data(blob_info).await.unwrap();
+        assert_eq!(expected_inclusion_data, actual_inclusion_data);
+        let retrieved_data = client.get_blob(blob_info).await.unwrap();
         assert_eq!(retrieved_data.unwrap(), data);
     }
 
@@ -203,7 +195,7 @@ mod tests {
         let config = EigenConfig {
             settlement_layer_confirmation_depth: 5,
             authenticated: true,
-            ..Default::default()
+            ..test_eigenda_config()
         };
         let secrets = EigenSecrets {
             private_key: PrivateKey::from_str(
@@ -211,7 +203,7 @@ mod tests {
             )
             .unwrap(),
         };
-        let client = EigenClient::new(config.clone(), secrets, Arc::new(MockGetBlobData))
+        let client = EigenClient::new(config.clone(), secrets, Arc::new(MockBlobProvider))
             .await
             .unwrap();
         let data = vec![1; 20];
@@ -220,10 +212,8 @@ mod tests {
 
         let expected_inclusion_data = blob_info.clone().blob_verification_proof.inclusion_proof;
         let actual_inclusion_data = client.get_inclusion_data(&result).await.unwrap().unwrap();
-        assert!(actual_inclusion_data
-            .windows(expected_inclusion_data.len())
-            .any(|window| window == expected_inclusion_data)); // Checks that the verification proof is included in the inclusion data
-        let retrieved_data = client.get_blob_data(blob_info).await.unwrap();
+        assert_eq!(expected_inclusion_data, actual_inclusion_data);
+        let retrieved_data = client.get_blob(blob_info).await.unwrap();
         assert_eq!(retrieved_data.unwrap(), data);
     }
 }

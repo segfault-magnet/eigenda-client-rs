@@ -10,12 +10,14 @@ use secrecy::ExposeSecret;
 use std::error::Error;
 use std::{str::FromStr, sync::Arc};
 
-/// This trait provides a method call which given the blob id, returns the blob data or None
-/// It you don't need to use it, just return None and it would be as if it didn't exist
-/// It can be used as extra verification if you also store the blob yourself
+/// Provides a way of retrieving blobs.
+/// Some implementations may not need it. In that case, they can return None in the get_blob method.
+/// It can be used as extra verification if you also store the blob yourself.
 #[async_trait]
-pub trait GetBlobData: std::fmt::Debug + Send + Sync {
-    async fn get_blob_data(
+pub trait BlobProvider: std::fmt::Debug + Send + Sync {
+    /// Returns the blob for the given blob_id.
+    /// If the blob is not found, it should return None.
+    async fn get_blob(
         &self,
         blob_id: &str,
     ) -> Result<Option<Vec<u8>>, Box<dyn Error + Send + Sync>>;
@@ -32,12 +34,12 @@ impl EigenClient {
     pub async fn new(
         config: EigenConfig,
         secrets: EigenSecrets,
-        get_blob_data: Arc<dyn GetBlobData>,
+        blob_provider: Arc<dyn BlobProvider>,
     ) -> Result<Self, EigenClientError> {
         let private_key = SecretKey::from_str(secrets.private_key.0.expose_secret().as_str())
             .map_err(ConfigError::Secp)?;
 
-        let client = RawEigenClient::new(private_key, config, get_blob_data).await?;
+        let client = RawEigenClient::new(private_key, config, blob_provider).await?;
         Ok(Self {
             client: Arc::new(client),
         })

@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{
     blob_info,
-    client::GetBlobData,
+    client::BlobProvider,
     errors::{
         BlobStatusError, CommunicationError, ConfigError, EigenClientError, VerificationError,
     },
@@ -34,7 +34,7 @@ pub(crate) struct RawEigenClient {
     private_key: SecretKey,
     pub config: EigenConfig,
     verifier: Verifier<eth_client::EthClient>,
-    get_blob_data: Arc<dyn GetBlobData>,
+    blob_provider: Arc<dyn BlobProvider>,
 }
 
 pub(crate) const FIELD_ELEMENT_SIZE_BYTES: usize = 32;
@@ -45,7 +45,7 @@ impl RawEigenClient {
     pub(crate) async fn new(
         private_key: SecretKey,
         config: EigenConfig,
-        get_blob_data: Arc<dyn GetBlobData>,
+        blob_provider: Arc<dyn BlobProvider>,
     ) -> Result<Self, EigenClientError> {
         let endpoint = Endpoint::from_str(config.disperser_rpc.as_str())
             .map_err(ConfigError::Tonic)?
@@ -66,7 +66,7 @@ impl RawEigenClient {
             private_key,
             config,
             verifier,
-            get_blob_data,
+            blob_provider,
         })
     }
 
@@ -175,15 +175,15 @@ impl RawEigenClient {
             return Ok(None);
         };
         let blob_info = blob_info::BlobInfo::try_from(blob_info)?;
-        let Some(data) = self.get_blob_data(blob_info.clone()).await? else {
-            return Err(CommunicationError::FailedToGetBlobData)?;
+        let Some(data) = self.get_blob(blob_info.clone()).await? else {
+            return Err(CommunicationError::FailedToGetBlob)?;
         };
 
         let data_db = self
-            .get_blob_data
-            .get_blob_data(request_id)
+            .blob_provider
+            .get_blob(request_id)
             .await
-            .map_err(CommunicationError::GetBlobData)?;
+            .map_err(CommunicationError::BlobProvider)?;
         if let Some(data_db) = data_db {
             if data_db != data {
                 return Err(VerificationError::DataMismatch)?;
@@ -198,6 +198,7 @@ impl RawEigenClient {
             .await;
         if let Err(e) = result {
             match e {
+                // in case of an error, the dispatcher will retry, so the need to return None
                 VerificationError::EmptyHash => return Ok(None),
                 _ => Err(EigenClientError::Verification(e))?,
             }
@@ -353,7 +354,7 @@ impl RawEigenClient {
     }
 
     /// Returns the blob data
-    pub(crate) async fn get_blob_data(
+    pub(crate) async fn get_blob(
         &self,
         blob_info: BlobInfo,
     ) -> Result<Option<Vec<u8>>, EigenClientError> {
@@ -375,7 +376,7 @@ impl RawEigenClient {
             .into_inner();
 
         if get_response.data.is_empty() {
-            return Err(CommunicationError::FailedToGetBlobData)?;
+            return Err(CommunicationError::FailedToGetBlob)?;
         }
 
         let data = remove_empty_byte_from_padded_bytes(&get_response.data);
