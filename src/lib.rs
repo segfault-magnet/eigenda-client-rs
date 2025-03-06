@@ -27,7 +27,7 @@ pub fn test_eigenda_config() -> crate::config::EigenConfig {
     crate::config::EigenConfig {
                 disperser_rpc: "https://disperser-holesky.eigenda.xyz:443".to_string(),
                 settlement_layer_confirmation_depth: 0,
-                eth_rpc_url: Some(crate::config::SecretUrl::new(url::Url::from_str("https://ethereum-holesky-rpc.publicnode.com").unwrap())), // Safe to unwrap, never fails
+                eth_rpc_url: crate::config::SecretUrl::new(url::Url::from_str("https://ethereum-holesky-rpc.publicnode.com").unwrap()), // Safe to unwrap, never fails
                 eigenda_svc_manager_address: ethereum_types::H160(hex_literal::hex!(
                     "d4a7e1bd8015057293f0d0a557088c286942e84b"
                 )),
