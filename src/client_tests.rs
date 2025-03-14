@@ -226,4 +226,34 @@ mod tests {
         let retrieved_data = client.get_blob(blob_info).await.unwrap();
         assert_eq!(retrieved_data.unwrap(), data);
     }
+
+    #[ignore = "depends on external RPC"]
+    #[tokio::test]
+    #[serial]
+    async fn test_custom_quorum_numbers() {
+        let config = EigenConfig {
+            custom_quorum_numbers: vec![2],
+            ..test_eigenda_config()
+        };
+        let secrets = EigenSecrets {
+            private_key: PrivateKey::from_str(
+                "d08aa7ae1bb5ddd46c3c2d8cdb5894ab9f54dec467233686ca42629e826ac4c6",
+            )
+            .unwrap(),
+        };
+        let client = EigenClient::new(config.clone(), secrets, Arc::new(MockBlobProvider))
+            .await
+            .unwrap();
+        let data = vec![1; 20];
+        let result = client.dispatch_blob(data.clone()).await.unwrap();
+
+        let blob_info = get_blob_info(&client, &result).await.unwrap();
+        let expected_inclusion_data = blob_info.clone().blob_verification_proof.inclusion_proof;
+        let actual_inclusion_data = client.get_inclusion_data(&result).await.unwrap().unwrap();
+        assert!(actual_inclusion_data
+            .windows(expected_inclusion_data.len())
+            .any(|window| window == expected_inclusion_data)); // Checks that the verification proof is included in the inclusion data
+        let retrieved_data = client.get_blob(blob_info).await.unwrap();
+        assert_eq!(retrieved_data.unwrap(), data);
+    }
 }

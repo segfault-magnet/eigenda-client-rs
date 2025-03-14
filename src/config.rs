@@ -60,6 +60,8 @@ pub struct EigenConfig {
     pub authenticated: bool,
     /// Points source
     pub srs_points_source: SrsPointsSource,
+    /// Custom quorum numbers
+    pub custom_quorum_numbers: Vec<u32>,
 }
 
 /// Contains the private key

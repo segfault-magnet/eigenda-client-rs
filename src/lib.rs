@@ -36,6 +36,7 @@ pub fn test_eigenda_config() -> crate::config::EigenConfig {
                 srs_points_source: crate::config::SrsPointsSource::Url((
                     "https://github.com/Layr-Labs/eigenda-proxy/raw/2fd70b99ef5bf137d7bbca3461cf9e1f2c899451/resources/g1.point".to_string(),
                     "https://github.com/Layr-Labs/eigenda-proxy/raw/2fd70b99ef5bf137d7bbca3461cf9e1f2c899451/resources/g2.point.powerOf2".to_string(),
-                ))
+                )),
+                custom_quorum_numbers: vec![],
         }
 }
