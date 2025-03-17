@@ -1,2 +1,2 @@
 # eigenda-client-rs
-Rust client for interacting with eigenda.
+Rust clients for interacting with EigenDA.

@@ -1,39 +1,29 @@
-[package]
-# This is named with the rust- prefix to match https://github.com/Layr-Labs/rust-kzg-bn254
-# We will remove the prefix and publish as new crates once we combine all of these repos
-# and move them into the eigenda monorepo.
-name = "rust-eigenda-client"
-repository = "https://github.com/Layr-Labs/eigenda-client-rs"
-description = "EigenDA Client"
-version = "0.1.2"
-edition = "2021"
-license = "MIT OR Apache-2.0"
-exclude = [
-    # Excluded because g1.point is 32MiB and max crates.io package size is 10MiB.
-    # Users should download the SRS points themselves from the repo or elsewhere.
-    "resources/*",
+[workspace]
+resolver = "3"
+
+members = [
+    "crates/rust-eigenda-client",
+    "crates/rust-eigenda-v2-client",
 ]
 
-[dependencies]
+[workspace.package]
+authors = ["Layr Labs"]
+description = "EigenDA Clients"
+repository = "https://github.com/Layr-Labs/eigenda-client-rs"
+license = "MIT OR Apache-2.0"
+edition = "2024"
+
+
+[workspace.dependencies]
+tokio = {version = "1", features = ["fs"]}
 tokio-stream = "0.1.16"
 rust-kzg-bn254 = "0.2.1"
 ark-bn254 = "0.5.0"
-num-bigint = "0.4.6"
-rand = "0.8"
-sha3 = "0.10.8"
-tiny-keccak = "2"
-ethabi = "18.0.0"
-thiserror = "1"
 ethereum-types = { version = "0.14.1", features = ["serialize"] }
-prost = "0.12.6"
-tonic = { version = "0.11.0", features = ["tls-roots", "prost", "codegen"] }
-secp256k1 = { version = "0.27.0", features = ["recovery", "global-context"] }
-bytes = {version= "1", features = ["serde"]}
-reqwest = {version = "0.12", features = ["json"] }
-serde = "1"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-backon = "0.4.4"
-tokio = {version = "1", features = ["fs"]}
+thiserror = "1"
+tonic = { version = "0.11.0", features = ["tls-roots", "prost", "codegen"] }
 async-trait = "0.1"
 hex = "0.4"
 secrecy = "0.8.0"
@@ -41,6 +31,12 @@ byteorder = "1.5.0"
 url = "2.5.2"
 tempfile = "3.0.2"
 hex-literal = "0.3"
-
-[dev-dependencies]
-serial_test = "3.1.1"
+secp256k1 = { version = "0.27.0", features = ["recovery", "global-context"] }
+bytes = {version= "1", features = ["serde"]}
+reqwest = {version = "0.12", features = ["json"] }
+prost = "0.12.6"
+num-bigint = "0.4.6"
+rand = "0.8"
+sha3 = "0.10.8"
+tiny-keccak = "2"
+ethabi = "18.0.0"
