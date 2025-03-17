@@ -61,11 +61,12 @@ pub struct EigenConfig {
     /// Points source
     pub(crate) srs_points_source: SrsPointsSource,
     /// Custom quorum numbers
-    pub(crate) custom_quorum_numbers: Vec<u32>,
+    pub(crate) custom_quorum_numbers: Vec<u8>,
 }
 
 impl EigenConfig {
     /// Create a new EigenConfig
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         disperser_rpc: String,
         eth_rpc_url: SecretUrl,
@@ -74,16 +75,8 @@ impl EigenConfig {
         wait_for_finalization: bool,
         authenticated: bool,
         srs_points_source: SrsPointsSource,
-        custom_quorum_numbers: Vec<u32>,
+        custom_quorum_numbers: Vec<u8>,
     ) -> Result<Self, ConfigError> {
-
-        custom_quorum_numbers.iter().try_for_each(|&x| {
-            if x > 255 {
-                return Err(ConfigError::InvalidQuorumNumber(x));
-            }
-            Ok(())
-        })?;
-
         Ok(Self {
             disperser_rpc,
             eth_rpc_url,
