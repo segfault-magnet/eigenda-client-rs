@@ -16,5 +16,5 @@ jobs:
           override: true
 
       - name: Publish Crate
-        # TODO: we should also publish rust-eigenda-client-v2 once its done
+        # TODO: we should also publish rust-eigenda-v2-client once its done
         run: cargo publish --package rust-eigenda-client --token ${{ secrets.CRATES_IO_TOKEN }}

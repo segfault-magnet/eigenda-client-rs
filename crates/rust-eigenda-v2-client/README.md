@@ -1,4 +1,4 @@
-# rust-eigenda-client-v2
+# rust-eigenda-v2-client
 
 Rust client for interacting with EigenDA V2.
 
@@ -6,5 +6,5 @@ Rust client for interacting with EigenDA V2.
 
 ```toml
 [dependencies]
-rust-eigenda-client-v2 = "0.1.0"
+rust-eigenda-v2-client = "0.1.0"
 ```

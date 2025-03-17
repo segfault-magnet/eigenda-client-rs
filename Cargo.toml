@@ -3,7 +3,7 @@ resolver = "3"
 
 members = [
     "crates/rust-eigenda-client",
-    "crates/rust-eigenda-client-v2",
+    "crates/rust-eigenda-v2-client",
 ]
 
 [workspace.package]
