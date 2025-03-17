@@ -8,7 +8,7 @@ members = [
 
 [workspace.package]
 authors = ["Layr Labs"]
-description = "EigenDA Client for Rust"
+description = "EigenDA Clients"
 repository = "https://github.com/Layr-Labs/eigenda-client-rs"
 license = "MIT OR Apache-2.0"
 edition = "2024"
