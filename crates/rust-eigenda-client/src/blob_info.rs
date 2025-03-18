@@ -43,7 +43,7 @@ impl From<DisperserG1Commitment> for G1Commitment {
 #[derive(Debug, PartialEq, Clone)]
 pub struct BlobQuorumParam {
     /// The ID of the quorum.
-    pub quorum_number: u32,
+    pub quorum_number: u8,
     /// The max percentage of stake within the quorum that can be held by or delegated to adversarial operators.
     pub adversary_threshold_percentage: u32,
     /// The min percentage of stake that must attest in order to consider the dispersal successful.
@@ -73,7 +73,7 @@ impl BlobQuorumParam {
 impl From<DisperserBlobQuorumParam> for BlobQuorumParam {
     fn from(value: DisperserBlobQuorumParam) -> Self {
         Self {
-            quorum_number: value.quorum_number,
+            quorum_number: value.quorum_number as u8, // Safe to cast as disperser always returns u32 casted to u8
             adversary_threshold_percentage: value.adversary_threshold_percentage,
             confirmation_threshold_percentage: value.confirmation_threshold_percentage,
             chunk_length: value.chunk_length,
