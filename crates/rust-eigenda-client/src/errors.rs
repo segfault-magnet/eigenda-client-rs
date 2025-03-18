@@ -27,8 +27,6 @@ pub enum ConfigError {
     PrivateKey,
     #[error("ETH RPC URL not set")]
     NoEthRpcUrl,
-    #[error("Invalid Quorum Number: {0}")]
-    InvalidQuorumNumber(u32),
     #[error(transparent)]
     Secp(#[from] secp256k1::Error),
     #[error(transparent)]
