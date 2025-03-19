@@ -1,18 +1,9 @@
-use ark_bn254::Fr;
-use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
-
+use crate::core::{Blob, EncodedPayload, PayloadForm};
 use crate::utils::eval_to_coeff_poly;
 
-use super::{blob::Blob, encoded_payload::EncodedPayload};
-
-// TODO: remove, this will be implemented somewhere else
-enum PayloadForm {
-    Eval,
-    Coeff,
-}
-
 /// Payload represents arbitrary user data, without any processing.
-pub(crate) struct Payload {
+#[derive(Debug, PartialEq)]
+pub struct Payload {
     bytes: Vec<u8>,
 }
 
@@ -27,10 +18,10 @@ impl Payload {
     /// The payload_form indicates how payloads are interpreted. The form of a payload dictates what conversion, if any, must
     /// be performed when creating a blob from the payload.
     pub fn to_blob(&self, payload_form: PayloadForm) -> Result<Blob, String> {
-        let encoded_payload = EncodedPayload::new(&self);
+        let encoded_payload = EncodedPayload::new(self)?;
         let field_elements = encoded_payload.to_field_elements();
 
-        let blob_length_symbols = ((&field_elements).len() as u32).next_power_of_two();
+        let blob_length_symbols = (field_elements.len() as u32).next_power_of_two();
 
         let coeff_polynomial = match payload_form {
             PayloadForm::Coeff => {

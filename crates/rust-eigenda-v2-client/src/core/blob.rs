@@ -3,7 +3,7 @@ use ark_bn254::Fr;
 // Blob is data that is dispersed on eigenDA.
 //
 // A Blob is represented under the hood by an array of field elements, which represent a polynomial in coefficient form
-pub(crate) struct Blob {
+pub struct Blob {
     pub coeff_polynomial: Vec<Fr>,
     // blobLengthSymbols must be a power of 2, and should match the blobLength claimed in the BlobCommitment
     //
