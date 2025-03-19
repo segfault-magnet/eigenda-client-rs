@@ -12,12 +12,5 @@ pub(crate) struct Blob {
     // bytes are trailing zeros. When a different user fetches the blob from a relay, it's possible that the relay could
     // truncate the trailing zeros. If we were to say that blobLengthSymbols = nextPowerOf2(len(coeffPolynomial)), then the
     // user fetching and reconstructing this blob would determine that the blob length is 1 symbol, when it's actually 2.
-    pub blobLengthSymbols: u32,
-}
-
-impl Blob {
-    /// Initializes a blob from a polynomial
-    pub fn from_polynomial(_coeff_polynomial: Vec<Fr>, _blobLengthSymbols: u32) -> Self {
-        todo!()
-    }
+    pub blob_length_symbols: u32,
 }
