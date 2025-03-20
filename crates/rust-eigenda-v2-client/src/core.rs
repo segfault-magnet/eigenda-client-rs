@@ -6,7 +6,7 @@ pub use blob::Blob;
 pub use encoded_payload::EncodedPayload;
 pub use payload::Payload;
 
-pub(crate) const BYTES_PER_SYMBOL: u8 = 32;
+pub(crate) const BYTES_PER_SYMBOL: usize = 32;
 
 /// Payload encoding version
 #[derive(Debug, PartialEq)]
@@ -15,6 +15,7 @@ pub enum PayloadEncodingVersion {
 }
 
 /// The form of a payload dictates what conversion, if any, must be performed when creating a blob from the payload.
+#[derive(Clone, Copy)]
 pub enum PayloadForm {
     /// Evaluation form, where the payload is in evaluation form
     Eval,

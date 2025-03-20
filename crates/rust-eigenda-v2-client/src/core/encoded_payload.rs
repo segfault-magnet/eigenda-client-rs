@@ -85,7 +85,7 @@ impl EncodedPayload {
     /// `max_payload_length` is the maximum length in bytes that the contained `Payload` is permitted to be.
     pub fn from_field_elements(
         field_elements: &[Fr],
-        max_payload_length: u32,
+        max_payload_length: usize,
     ) -> Result<EncodedPayload, String> {
         let serialized_felts = to_byte_array(field_elements, usize::MAX);
         // read payload length from the payload header
@@ -98,14 +98,14 @@ impl EncodedPayload {
             }
         };
 
-        if payload_length > max_payload_length {
+        if payload_length > max_payload_length as u32 {
             return Err(
                 "Invalid serialized field elements: payload length is greater than maximum allowed"
                     .to_string(),
             );
         }
 
-        let padded_length = get_padded_data_length(payload_length);
+        let padded_length = get_padded_data_length(payload_length as usize);
         // add 32 to take into account the payload header
         let encoded_payload_length = padded_length + 32;
 
@@ -148,7 +148,7 @@ impl EncodedPayload {
 /// This function assumes that the input aligns to 32 bytes. Since it is removing 1 byte for every 31 bytes kept, the
 /// output from this function is not guaranteed to align to 32 bytes.
 fn remove_internal_padding(padded_data: &[u8]) -> Result<Vec<u8>, String> {
-    if padded_data.len() % (BYTES_PER_SYMBOL as usize) != 0 {
+    if padded_data.len() % BYTES_PER_SYMBOL != 0 {
         return Err(format!(
             "padded data (length {}) must be multiple of BYTES_PER_SYMBOL ({})",
             padded_data.len(),
@@ -156,15 +156,15 @@ fn remove_internal_padding(padded_data: &[u8]) -> Result<Vec<u8>, String> {
         ));
     }
 
-    let bytes_per_chunk = (BYTES_PER_SYMBOL - 1) as usize;
-    let symbol_count = padded_data.len() / (BYTES_PER_SYMBOL as usize);
+    let bytes_per_chunk = BYTES_PER_SYMBOL - 1;
+    let symbol_count = padded_data.len() / BYTES_PER_SYMBOL;
     let output_length = symbol_count * bytes_per_chunk;
 
     let mut output_data = vec![0u8; output_length];
 
     for i in 0..symbol_count {
         let dst_index = i * bytes_per_chunk;
-        let src_index = i * (BYTES_PER_SYMBOL as usize) + 1;
+        let src_index = i * BYTES_PER_SYMBOL + 1;
 
         output_data[dst_index..dst_index + bytes_per_chunk]
             .copy_from_slice(&padded_data[src_index..src_index + bytes_per_chunk]);
@@ -177,21 +177,21 @@ fn remove_internal_padding(padded_data: &[u8]) -> Result<Vec<u8>, String> {
 /// adding internal byte padding.
 ///
 /// The value returned from this function will always be a multiple of `BYTES_PER_SYMBOL`
-fn get_padded_data_length(data_length: u32) -> usize {
-    let bytes_per_chunk = (BYTES_PER_SYMBOL - 1) as u32;
-    let mut chunk_count = (data_length / bytes_per_chunk) as usize;
+fn get_padded_data_length(data_length: usize) -> usize {
+    let bytes_per_chunk = BYTES_PER_SYMBOL - 1;
+    let mut chunk_count = data_length / bytes_per_chunk;
 
     if data_length % bytes_per_chunk != 0 {
         chunk_count += 1;
     }
 
-    chunk_count * (BYTES_PER_SYMBOL as usize)
+    chunk_count * BYTES_PER_SYMBOL
 }
 
 /// Accepts an array of data, and returns the array after adding padding to be bn254 friendly.
 fn pad_to_bn254(data: &[u8]) -> Vec<u8> {
-    let bytes_per_chunk = (BYTES_PER_SYMBOL - 1) as usize;
-    let output_length = get_padded_data_length(data.len() as u32);
+    let bytes_per_chunk = BYTES_PER_SYMBOL - 1;
+    let output_length = get_padded_data_length(data.len());
     let mut padded_output = vec![0u8; output_length];
 
     // pre-pad the input, so that it aligns to 31 bytes. This means that the internally padded result will automatically
@@ -200,7 +200,7 @@ fn pad_to_bn254(data: &[u8]) -> Vec<u8> {
     let pre_padded_payload = [data, &vec![0u8; required_pad]].concat();
 
     for elem in 0..output_length / 32 {
-        let zero_byte_index = elem * bytes_per_chunk;
+        let zero_byte_index = elem * BYTES_PER_SYMBOL;
         padded_output[zero_byte_index] = 0x00;
 
         let destination_index = zero_byte_index + 1;
@@ -223,7 +223,10 @@ mod tests {
     #[test]
     fn test_encoding_decoding() {
         // TODO: add proptest
-        let payload = Payload::new("hello world".to_string().into_bytes());
+        let payload = Payload::new(vec![
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+            25, 26, 27, 28, 29, 30, 31, 32,
+        ]);
         let encoded_payload = EncodedPayload::new(&payload);
         assert!(encoded_payload.is_ok());
 
@@ -270,7 +273,7 @@ mod tests {
 
         // Create an extended version by appending 33 bytes (all zeros)
         let mut extended_bytes = encoded_payload.bytes.clone();
-        extended_bytes.extend_from_slice(&vec![0u8; 33]);
+        extended_bytes.extend_from_slice(&[0u8; 33]);
 
         let extended_payload = EncodedPayload {
             bytes: extended_bytes,
@@ -286,11 +289,15 @@ mod tests {
     #[test]
     fn test_from_to_field_elements() {
         // TODO: add proptest
-        let payload = Payload::new("hello world".to_string().into_bytes());
+        let payload = Payload::new(
+            "0123456789012345678901234567890123"
+                .to_string()
+                .into_bytes(),
+        );
         let encoded_payload = EncodedPayload::new(&payload).unwrap();
 
         let field_elements = encoded_payload.to_field_elements();
-        let max_payload_length = u32::MAX;
+        let max_payload_length = usize::MAX;
         let new_encoded_payload =
             EncodedPayload::from_field_elements(&field_elements, max_payload_length).unwrap();
 
@@ -319,7 +326,7 @@ mod tests {
         field_elements1.push(ark_bn254::Fr::from(0));
 
         // This should succeed - adding a zero is fine
-        let max_payload_length = (field_elements1.len() * BYTES_PER_SYMBOL as usize) as u32;
+        let max_payload_length = field_elements1.len() * BYTES_PER_SYMBOL;
         let result1 = EncodedPayload::from_field_elements(&field_elements1, max_payload_length);
         assert!(result1.is_ok());
 
@@ -329,7 +336,7 @@ mod tests {
         field_elements2.push(ark_bn254::Fr::from(1));
 
         // This should fail - adding a trailing non-zero value is not fine
-        let max_payload_length = (field_elements2.len() * BYTES_PER_SYMBOL as usize) as u32;
+        let max_payload_length = field_elements2.len() * BYTES_PER_SYMBOL;
         let result2 = EncodedPayload::from_field_elements(&field_elements2, max_payload_length);
         assert!(result2.is_err());
     }

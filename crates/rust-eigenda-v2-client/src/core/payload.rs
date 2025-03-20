@@ -21,7 +21,7 @@ impl Payload {
         let encoded_payload = EncodedPayload::new(self)?;
         let field_elements = encoded_payload.to_field_elements();
 
-        let blob_length_symbols = (field_elements.len() as u32).next_power_of_two();
+        let blob_length_symbols = field_elements.len().next_power_of_two();
 
         let coeff_polynomial = match payload_form {
             PayloadForm::Coeff => {
