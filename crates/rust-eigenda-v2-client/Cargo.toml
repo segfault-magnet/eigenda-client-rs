@@ -18,6 +18,7 @@ exclude = [
 rand = { workspace = true }
 bytes = { workspace = true}
 reqwest = { workspace = true }
+num-bigint = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
@@ -33,10 +34,11 @@ thiserror = { workspace = true }
 ethereum-types = { workspace = true }
 prost = { workspace = true }
 tonic = { workspace = true }
+tiny-keccak = { workspace = true }
 tokio-stream = { workspace = true }
 ark-bn254 = { workspace = true }
 rust-kzg-bn254-primitives = { workspace = true }
 rust-kzg-bn254-verifier = { workspace = true }
 ark-poly = { workspace = true }
-proptest = "1.4" # todo
-ark-ff = "0.5.0" 
+proptest = { workspace = true }
+ark-ff = { workspace = true }

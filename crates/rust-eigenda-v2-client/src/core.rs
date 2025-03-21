@@ -1,4 +1,5 @@
 mod blob;
+pub mod eigenda_cert;
 mod encoded_payload;
 mod payload;
 
