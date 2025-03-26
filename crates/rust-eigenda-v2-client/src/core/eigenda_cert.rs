@@ -270,14 +270,22 @@ impl EigenDACert {
         blob_status_reply: BlobStatusReply,
         non_signer_stakes_and_signature: NonSignerStakesAndSignature,
     ) -> Result<Self, EigenDACertError> {
-        let binding_inclusion_info =
-            BlobInclusionInfo::try_from(blob_status_reply.blob_inclusion_info.ok_or(EigenDACertError)?)?;
+        let binding_inclusion_info = BlobInclusionInfo::try_from(
+            blob_status_reply
+                .blob_inclusion_info
+                .ok_or(EigenDACertError)?,
+        )?;
 
         let signed_batch = blob_status_reply.signed_batch.ok_or(EigenDACertError)?;
-        let binding_batch_header = BatchHeaderV2::try_from(signed_batch.header.ok_or(EigenDACertError)?)?;
+        let binding_batch_header =
+            BatchHeaderV2::try_from(signed_batch.header.ok_or(EigenDACertError)?)?;
 
         let mut signed_quorum_numbers: Vec<u8> = Vec::new();
-        for q in signed_batch.attestation.ok_or(EigenDACertError)?.quorum_numbers {
+        for q in signed_batch
+            .attestation
+            .ok_or(EigenDACertError)?
+            .quorum_numbers
+        {
             signed_quorum_numbers.push(q.try_into().map_err(|_| EigenDACertError)?);
         }
 
