@@ -1,5 +1,3 @@
-use std::u16;
-
 use ark_bn254::{G1Affine, G2Affine};
 use ethabi::Token;
 use ethereum_types::U256;
@@ -18,69 +16,7 @@ use crate::generated::{
     },
     disperser::v2::BlobInclusionInfo as ProtoBlobInclusionInfo,
 };
-
-#[derive(Debug, PartialEq, Clone)]
-pub(crate) struct G1Commitment {
-    pub(crate) x: Vec<u8>,
-    pub(crate) y: Vec<u8>,
-}
-
-impl TryFrom<Vec<u8>> for G1Commitment {
-    type Error = ConversionError;
-
-    // TODO: How many bytes does each field take?
-    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        if value.len() != 64 {
-            return Err(ConversionError::G1Point(format!(
-                "Invalid byte length {}",
-                value.len()
-            )));
-        }
-
-        let mut x = vec![0u8; 32];
-        let mut y = vec![0u8; 32];
-        x.copy_from_slice(&value[0..32]);
-        y.copy_from_slice(&value[32..64]);
-        Ok(G1Commitment { x, y })
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub(crate) struct G2Commitment {
-    pub(crate) x_a0: Vec<u8>,
-    pub(crate) x_a1: Vec<u8>,
-    pub(crate) y_a0: Vec<u8>,
-    pub(crate) y_a1: Vec<u8>,
-}
-
-impl TryFrom<Vec<u8>> for G2Commitment {
-    type Error = ConversionError;
-
-    // TODO: How many bytes does each field take?
-    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        if value.len() != 128 {
-            return Err(ConversionError::G2Point(format!(
-                "Invalid byte length {}",
-                value.len()
-            )));
-        }
-
-        let mut x_a0 = vec![0u8; 32];
-        let mut x_a1 = vec![0u8; 32];
-        let mut y_a0 = vec![0u8; 32];
-        let mut y_a1 = vec![0u8; 32];
-        x_a0.copy_from_slice(&value[0..32]);
-        x_a1.copy_from_slice(&value[32..64]);
-        y_a0.copy_from_slice(&value[64..96]);
-        y_a1.copy_from_slice(&value[96..128]);
-        Ok(G2Commitment {
-            x_a0,
-            x_a1,
-            y_a0,
-            y_a1,
-        })
-    }
-}
+use crate::utils::{g1_commitment_from_bytes, g2_commitment_from_bytes};
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) struct PaymentHeader {
@@ -101,10 +37,7 @@ impl From<ProtoPaymentHeader> for PaymentHeader {
 
 impl PaymentHeader {
     pub fn hash(&self) -> Result<[u8; 32], ConversionError> {
-        let cumulative_payment =
-            U256::try_from(self.cumulative_payment.as_slice()).map_err(|_| {
-                ConversionError::PaymentHeader("Invalid cumulative payment".to_string())
-            })?;
+        let cumulative_payment = U256::from(self.cumulative_payment.as_slice());
         let token = Token::Tuple(vec![
             Token::String(self.account_id.clone()),
             Token::Int(self.timestamp.into()),
@@ -124,9 +57,9 @@ impl PaymentHeader {
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) struct BlobCommitment {
-    commitment: G1Commitment,
-    length_commitment: G2Commitment,
-    length_proof: G2Commitment,
+    commitment: G1Affine,
+    length_commitment: G2Affine,
+    length_proof: G2Affine,
     length: u32,
 }
 
@@ -134,9 +67,9 @@ impl TryFrom<ProtoBlobCommitment> for BlobCommitment {
     type Error = ConversionError;
 
     fn try_from(value: ProtoBlobCommitment) -> Result<Self, Self::Error> {
-        let commitment = G1Commitment::try_from(value.commitment)?;
-        let length_commitment = G2Commitment::try_from(value.length_commitment)?;
-        let length_proof = G2Commitment::try_from(value.length_proof)?;
+        let commitment = g1_commitment_from_bytes(&value.commitment)?;
+        let length_commitment = g2_commitment_from_bytes(&value.length_commitment)?;
+        let length_proof = g2_commitment_from_bytes(&value.length_proof)?;
         let length = value.length;
 
         Ok(Self {
@@ -270,7 +203,7 @@ impl TryFrom<ProtoBatchHeader> for BatchHeaderV2 {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub(crate) struct NonSignerStakesAndSignature {
+pub struct NonSignerStakesAndSignature {
     non_signer_quorum_bitmap_indices: Vec<u32>,
     non_signer_pubkeys: Vec<G1Affine>,
     quorum_apks: Vec<G1Affine>,
@@ -285,7 +218,7 @@ pub(crate) struct NonSignerStakesAndSignature {
 //
 // This struct represents the composition of a eigenDA blob certificate, as it would exist in a rollup inbox.
 #[derive(Debug, PartialEq, Clone)]
-pub(crate) struct EigenDACert {
+pub struct EigenDACert {
     blob_inclusion_info: BlobInclusionInfo,
     batch_header: BatchHeaderV2,
     non_signer_stakes_and_signature: NonSignerStakesAndSignature,
@@ -294,7 +227,7 @@ pub(crate) struct EigenDACert {
 
 impl EigenDACert {
     /// creates a new EigenDACert from a BlobStatusReply, and NonSignerStakesAndSignature
-    pub(crate) fn new(
+    pub fn new(
         blob_status_reply: BlobStatusReply,
         non_signer_stakes_and_signature: NonSignerStakesAndSignature,
     ) -> Result<Self, EigenClientError> {
@@ -334,7 +267,7 @@ impl EigenDACert {
     }
 
     /// Computes the blob_key of the blob that belongs to the EigenDACert
-    pub(crate) fn compute_blob_key(&self) -> Result<BlobKey, ConversionError> {
+    pub fn compute_blob_key(&self) -> Result<BlobKey, ConversionError> {
         let blob_header = self
             .blob_inclusion_info
             .blob_certificate
@@ -395,8 +328,14 @@ fn compute_blob_key_bytes(
             // AbiBlobCommitments
             // Commitment
             Token::Tuple(vec![
-                Token::Uint(U256::from_big_endian(&blob_commitments.commitment.x)), // commitment X
-                Token::Uint(U256::from_big_endian(&blob_commitments.commitment.y)), // commitment Y
+                Token::Uint(
+                    U256::from_dec_str(&blob_commitments.commitment.x.to_string())
+                        .map_err(|e| ConversionError::U256Conversion(e.to_string()))?,
+                ), // commitment X
+                Token::Uint(
+                    U256::from_dec_str(&blob_commitments.commitment.y.to_string())
+                        .map_err(|e| ConversionError::U256Conversion(e.to_string()))?,
+                ), // commitment Y
             ]),
             // Most cryptography library serializes a G2 point by having
             // A0 followed by A1 for both X, Y field of G2. However, ethereum
@@ -408,33 +347,49 @@ fn compute_blob_key_bytes(
             Token::Tuple(vec![
                 // X
                 Token::FixedArray(vec![
-                    Token::Uint(U256::from_big_endian(
-                        &blob_commitments.length_commitment.x_a1,
-                    )),
-                    Token::Uint(U256::from_big_endian(
-                        &blob_commitments.length_commitment.x_a0,
-                    )),
+                    Token::Uint(
+                        U256::from_dec_str(&blob_commitments.length_commitment.x.c1.to_string())
+                            .map_err(|e| ConversionError::U256Conversion(e.to_string()))?,
+                    ),
+                    Token::Uint(
+                        U256::from_dec_str(&blob_commitments.length_commitment.x.c0.to_string())
+                            .map_err(|e| ConversionError::U256Conversion(e.to_string()))?,
+                    ),
                 ]),
                 // Y
                 Token::FixedArray(vec![
-                    Token::Uint(U256::from_big_endian(
-                        &blob_commitments.length_commitment.y_a1,
-                    )),
-                    Token::Uint(U256::from_big_endian(
-                        &blob_commitments.length_commitment.y_a0,
-                    )),
+                    Token::Uint(
+                        U256::from_dec_str(&blob_commitments.length_commitment.y.c1.to_string())
+                            .map_err(|e| ConversionError::U256Conversion(e.to_string()))?,
+                    ),
+                    Token::Uint(
+                        U256::from_dec_str(&blob_commitments.length_commitment.y.c0.to_string())
+                            .map_err(|e| ConversionError::U256Conversion(e.to_string()))?,
+                    ),
                 ]),
             ]),
             // Same as above
             // LengthProof
             Token::Tuple(vec![
                 Token::FixedArray(vec![
-                    Token::Uint(U256::from_big_endian(&blob_commitments.length_proof.x_a1)),
-                    Token::Uint(U256::from_big_endian(&blob_commitments.length_proof.x_a0)),
+                    Token::Uint(
+                        U256::from_dec_str(&blob_commitments.length_proof.x.c1.to_string())
+                            .map_err(|e| ConversionError::U256Conversion(e.to_string()))?,
+                    ),
+                    Token::Uint(
+                        U256::from_dec_str(&blob_commitments.length_proof.x.c0.to_string())
+                            .map_err(|e| ConversionError::U256Conversion(e.to_string()))?,
+                    ),
                 ]),
                 Token::FixedArray(vec![
-                    Token::Uint(U256::from_big_endian(&blob_commitments.length_proof.y_a1)),
-                    Token::Uint(U256::from_big_endian(&blob_commitments.length_proof.y_a0)),
+                    Token::Uint(
+                        U256::from_dec_str(&blob_commitments.length_proof.y.c1.to_string())
+                            .map_err(|e| ConversionError::U256Conversion(e.to_string()))?,
+                    ),
+                    Token::Uint(
+                        U256::from_dec_str(&blob_commitments.length_proof.y.c0.to_string())
+                            .map_err(|e| ConversionError::U256Conversion(e.to_string()))?,
+                    ),
                 ]),
             ]),
             Token::Uint(blob_commitments.length.into()), // DataLength
@@ -457,7 +412,5 @@ fn compute_blob_key_bytes(
     keccak.update(&packed_bytes);
     let mut blob_key = [0u8; 32];
     keccak.finalize(&mut blob_key);
-    blob_key
-        .try_into()
-        .map_err(|_| ConversionError::BlobKey("Failed to parse blob key".to_string()))
+    Ok(blob_key.into())
 }

@@ -42,3 +42,5 @@ rust-kzg-bn254-verifier = { workspace = true }
 ark-poly = { workspace = true }
 proptest = { workspace = true }
 ark-ff = { workspace = true }
+ark-serialize = { workspace = true }
+ark-std = { workspace = true }

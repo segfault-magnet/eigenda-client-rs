@@ -32,6 +32,10 @@ pub enum ConversionError {
     BatchHeader(String),
     #[error("Failed to parse blob key: {0}")]
     BlobKey(String),
+    #[error("Failed to convert U256: {0}")]
+    U256Conversion(String),
+    #[error(transparent)]
+    ArkSerializationError(#[from] ark_serialize::SerializationError),
 }
 
 /// Errors specific to the Blob type
