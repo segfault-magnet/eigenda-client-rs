@@ -259,19 +259,77 @@ mod tests {
     use super::*;
     use anyhow::{Context, Result};
     use k256::ecdsa::{
-        signature::hazmat::PrehashVerifier, // For verify_prehash
+        signature::hazmat::{PrehashSigner, PrehashVerifier},
         RecoveryId, Signature, VerifyingKey,
     };
     use rand::rngs::OsRng;
     use sha2::{Digest, Sha256};
+    use std::convert::TryInto;
 
-    // --- Helper Functions ---
+    // --- Helper Functions & Types ---
+
+    /// Represents a recoverable ECDSA signature, storing the core
+    /// signature (R, S) and the calculated recovery ID (V).
+    /// Can generate the 65-byte [R||S||V] format on demand.
+    #[derive(Debug, Clone)]
+    struct RecoverableSignature {
+        signature: Signature,
+        recovery_id: RecoveryId,
+    }
+
+    impl RecoverableSignature {
+        /// Creates a recoverable signature from KMS DER bytes.
+        fn from_kms_der(
+            signature_der: &[u8],
+            message_hash: &[u8; 32],
+            verifying_key: &VerifyingKey,
+        ) -> Result<Self> {
+            println!("Processing signature explicitly as DER (KMS)");
+            let (signature, recovery_id) =
+                normalize_der_signature(signature_der, message_hash, verifying_key)
+                    .context("Failed to normalize DER signature")?;
+            Ok(Self { signature, recovery_id })
+        }
+
+        /// Creates a recoverable signature from a local k256::Signature.
+        fn from_local_signature(
+            signature: &Signature,
+            message_hash: &[u8; 32],
+            verifying_key: &VerifyingKey,
+        ) -> Result<Self> {
+            println!("Processing signature explicitly as compact R||S (local)");
+            // Normalize the S value before attempting recovery
+            let normalized_sig = signature.normalize_s().unwrap_or(*signature);
+            let recovery_id = determine_recovery_id(&normalized_sig, message_hash, verifying_key)
+                .context("Failed to determine recovery ID for compact signature")?;
+            Ok(Self { signature: normalized_sig, recovery_id })
+        }
+
+        /// Returns the signature component (R, S).
+        fn signature(&self) -> &Signature {
+            &self.signature
+        }
+
+        /// Returns the recovery ID component (V).
+        fn recovery_id(&self) -> RecoveryId {
+            self.recovery_id
+        }
+
+        /// Generates the 65-byte [R||S||V] representation.
+        fn to_bytes_65(&self) -> [u8; 65] {
+            let sig_bytes = self.signature.to_bytes(); // This is [R||S]
+            let mut result = [0u8; 65];
+            result[..64].copy_from_slice(&sig_bytes);
+            result[64] = self.recovery_id.to_byte();
+            result
+        }
+    }
 
     /// Helper function to set up KMS instance and generate keys
     async fn setup_kms_and_keys() -> Result<(KmsProcess, SigningKey, VerifyingKey)> {
         let kms_proc = Kms::default().with_show_logs(false).start().await?;
         let signing_key = SigningKey::random(&mut OsRng);
-        let verifying_key = signing_key.verifying_key().clone();
+        let verifying_key = signing_key.verifying_key().clone(); // Clone to return owned key
         Ok((kms_proc, signing_key, verifying_key))
     }
 
@@ -320,89 +378,27 @@ mod tests {
         anyhow::bail!("Could not recover correct public key from signature")
     }
 
-    /// Convert a k256 Signature and RecoveryId into the common 65-byte format [R||S||V].
-    fn to_recoverable_signature_bytes(
-        signature: &Signature,
-        recovery_id: RecoveryId,
-    ) -> Vec<u8> {
-        let sig_bytes = signature.to_bytes();
-        let mut result = Vec::with_capacity(65);
-        result.extend_from_slice(&sig_bytes);
-        result.push(recovery_id.to_byte());
-        result
-    }
-
-    /// Process signature bytes (origin unknown) into the 65-byte recoverable format [R||S||V].
-    /// It tries parsing as DER (KMS-like) first, then as compact R||S (local-like).
-    fn process_signature_for_auth(
-        signature_bytes: &[u8],
-        message_hash: &[u8; 32],
-        verifying_key: &VerifyingKey,
-    ) -> Result<Vec<u8>> {
-        // 1. Try processing as DER (like KMS)
-        if let Ok((normalized_sig, recovery_id)) =
-            normalize_der_signature(signature_bytes, message_hash, verifying_key)
-        {
-            println!("Processed signature as DER (KMS-like)");
-            return Ok(to_recoverable_signature_bytes(&normalized_sig, recovery_id));
-        }
-
-        // 2. If DER failed, try processing as compact R||S (like local)
-        if let Ok(sig) = Signature::try_from(signature_bytes) {
-            println!("Processing signature as compact R||S (local-like)...");
-            // Normalize the S value before attempting recovery
-            let normalized_sig = sig.normalize_s().unwrap_or(sig);
-            println!("Normalized compact signature");
-
-            let recovery_id = determine_recovery_id(&normalized_sig, message_hash, verifying_key)
-                .context("Failed to determine recovery ID for compact signature")?;
-            println!(
-                "Determined recovery ID for compact signature: {}",
-                recovery_id.to_byte()
-            );
-            return Ok(to_recoverable_signature_bytes(&normalized_sig, recovery_id));
-        }
-
-        anyhow::bail!("Could not process signature bytes in any known format (DER or compact)")
-    }
-
-    /// Verify a 65-byte recoverable signature [R||S||V].
+    /// Verify a RecoverableSignature.
     /// Performs both standard verification and recovery verification.
     fn verify_recoverable_signature(
-        signature_bytes_65: &[u8],
+        rec_sig: &RecoverableSignature, // Accept the new type
         message_hash: &[u8; 32],
         expected_verifying_key: &VerifyingKey,
     ) -> Result<()> {
-        if signature_bytes_65.len() != 65 {
-            anyhow::bail!("Invalid signature length: expected 65 bytes");
-        }
-
-        let signature_rs_bytes = &signature_bytes_65[..64];
-        let recovery_id_byte = signature_bytes_65[64];
-
-        // Parse the R||S signature bytes
-        let signature = Signature::try_from(signature_rs_bytes)
-            .context("Failed to parse R||S signature bytes")?;
-
-        // Parse the recovery ID byte
-        let recovery_id = RecoveryId::from_byte(recovery_id_byte)
-            .context("Failed to parse recovery ID byte")?;
-
         println!(
-            "Verifying recoverable sig ({} bytes) with RecID {}...",
-            signature_bytes_65.len(),
-            recovery_id.to_byte()
+            "Verifying recoverable sig with RecID {}...",
+            rec_sig.recovery_id().to_byte()
         );
 
         // 1. Standard Verification using expected key and prehashed message
         expected_verifying_key
-            .verify_prehash(message_hash, &signature)
+            .verify_prehash(message_hash, rec_sig.signature())
             .context("Standard verification failed using prehashed message")?;
         println!(" -> Standard prehashed verification successful.");
 
         // 2. Recovery Verification
         let recovered_key =
-            VerifyingKey::recover_from_prehash(message_hash, &signature, recovery_id)
+            VerifyingKey::recover_from_prehash(message_hash, rec_sig.signature(), rec_sig.recovery_id())
                 .context("Failed to recover public key from signature")?;
 
         if &recovered_key == expected_verifying_key {
@@ -453,38 +449,31 @@ mod tests {
         println!("Message hash: {}", hex::encode(message_hash_array));
 
         // When: A signature is generated locally (using prehash) and processed
-        use k256::ecdsa::signature::hazmat::PrehashSigner;
         let local_signature: Signature = signing_key
             .sign_prehash(&message_hash_array)
             .expect("Failed to sign prehashed message locally");
-        let local_signature_compact_bytes = local_signature.to_bytes(); // R||S format
-        println!(
-            "Local signature (compact): {}",
-            hex::encode(local_signature_compact_bytes)
-        );
+        println!("Local signature (struct): {:?}", local_signature);
 
-        let processed_local_65 = process_signature_for_auth(
-            &local_signature_compact_bytes,
+        // Create the RecoverableSignature struct using the specific constructor
+        let processed_local_sig = RecoverableSignature::from_local_signature(
+            &local_signature,
             &message_hash_array,
             &verifying_key,
         )
         .context("Processing local signature failed")?;
 
-        // Then: The processed signature is 65 bytes long
-        assert_eq!(
-            processed_local_65.len(),
-            65,
-            "Processed local signature should be 65 bytes"
-        );
+        // Then: The processed signature can generate the correct 65 bytes
+        let bytes_65 = processed_local_sig.to_bytes_65();
         println!(
             "Processed local signature (65-byte): {}",
-            hex::encode(&processed_local_65)
+            hex::encode(bytes_65)
         );
+        assert_eq!(bytes_65.len(), 65);
 
-        // And: The 65-byte signature can be verified successfully
-        println!("\nVerifying processed LOCAL 65-byte signature:");
+        // And: The recoverable signature can be verified successfully
+        println!("\nVerifying processed LOCAL signature:");
         verify_recoverable_signature(
-            &processed_local_65,
+            &processed_local_sig, // Pass the struct instance
             &message_hash_array,
             &verifying_key,
         )
@@ -511,28 +500,26 @@ mod tests {
             hex::encode(&kms_signature_der_bytes)
         );
 
-        let processed_kms_65 = process_signature_for_auth(
+        // Create the RecoverableSignature struct using the specific constructor
+        let processed_kms_sig = RecoverableSignature::from_kms_der(
             &kms_signature_der_bytes,
             &message_hash_array,
             &verifying_key,
         )
         .context("Processing KMS signature failed")?;
 
-        // Then: The processed signature is 65 bytes long
-        assert_eq!(
-            processed_kms_65.len(),
-            65,
-            "Processed KMS signature should be 65 bytes"
-        );
+        // Then: The processed signature can generate the correct 65 bytes
+        let bytes_65 = processed_kms_sig.to_bytes_65();
         println!(
             "Processed KMS signature (65-byte): {}",
-            hex::encode(&processed_kms_65)
+            hex::encode(bytes_65)
         );
+        assert_eq!(bytes_65.len(), 65);
 
-        // And: The 65-byte signature can be verified successfully
-        println!("\nVerifying processed KMS 65-byte signature:");
+        // And: The recoverable signature can be verified successfully
+        println!("\nVerifying processed KMS signature:");
         verify_recoverable_signature(
-            &processed_kms_65,
+            &processed_kms_sig, // Pass the struct instance
             &message_hash_array,
             &verifying_key,
         )
