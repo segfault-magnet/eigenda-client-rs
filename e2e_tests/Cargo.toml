@@ -1,0 +1,24 @@
+[package]
+name = "e2e_tests"
+version = "0.1.0"
+authors.workspace = true
+description.workspace = true
+repository.workspace = true
+license.workspace = true
+edition.workspace = true
+
+[dependencies]
+testcontainers = { version = "0.20", default-features = false, features = [
+  "watchdog",
+] }
+rust-eigenda-client = { path = "../crates/rust-eigenda-client/" }
+tokio = { version = "1.37", default-features = false, features = [
+  "macros",
+  "rt-multi-thread",
+  "process",
+  "fs",
+  "io-util",
+] }
+anyhow = { version = "1.0", default-features = false, features = ["std"] }
+aws-config = { version = "1.5.5", features = ["rustls"] }
+aws-sdk-kms = { version = "1.36", features = ["rustls"] }

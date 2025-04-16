@@ -3,7 +3,7 @@ resolver = "2"
 
 members = [
     "crates/rust-eigenda-client",
-    "crates/rust-eigenda-v2-client",
+    "crates/rust-eigenda-v2-client", "e2e_tests",
 ]
 
 [workspace.package]
