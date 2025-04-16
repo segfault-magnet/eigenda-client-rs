@@ -28,3 +28,5 @@ hex = "0.4.3"
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 async-trait = "0.1.74"
 base64 = "0.21.0"
+k256 = "0.13"
+sha2 = "0.10"
