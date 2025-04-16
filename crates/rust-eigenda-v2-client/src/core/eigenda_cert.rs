@@ -18,6 +18,7 @@ use crate::generated::disperser::v2::{
     Attestation as ProtoAttestation, BlobStatusReply, SignedBatch as SignedBatchProto,
 };
 
+use crate::commitment_utils::{g1_commitment_from_bytes, g2_commitment_from_bytes};
 use crate::generated::{
     common::{
         v2::{
@@ -28,7 +29,6 @@ use crate::generated::{
     },
     disperser::v2::BlobInclusionInfo as ProtoBlobInclusionInfo,
 };
-use crate::utils::{g1_commitment_from_bytes, g2_commitment_from_bytes};
 
 use super::BlobKey;
 
