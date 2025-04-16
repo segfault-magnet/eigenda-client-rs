@@ -5,7 +5,7 @@ use aws_sdk_kms::types::{KeySpec, KeyUsageType, MessageType, SigningAlgorithmSpe
 use base64::Engine;
 use e2e_tests::kms::Kms;
 use k256::ecdsa::{signature::Signer, Signature, SigningKey};
-use k256::pkcs8::EncodePrivateKey;
+use k256::SecretKey;
 use rand::rngs::OsRng;
 use sha2::{Digest, Sha256};
 
@@ -128,42 +128,101 @@ use std::str::FromStr;
 
 #[tokio::test]
 async fn test_kms_key_injection_and_signing_gpt() -> anyhow::Result<()> {
-    //     // 1. Start LocalStack KMS
+    // 1. Start LocalStack KMS
     let kms_proc = Kms::default().with_show_logs(true).start().await?;
     let client = kms_proc.client();
 
-    // Define your premade key material (Base64-encoded) and custom key id.
-    // Ensure that the key material meets the required length/format for your key.
-    let signing_key = SigningKey::random(&mut OsRng); // Generate a new private key
-    let material = signing_key.to_bytes();
-    let base64_key_material = base64::engine::general_purpose::STANDARD.encode(&material);
-    let custom_key_material = base64_key_material.as_str();
-    let custom_key_id = "00000000-0000-0000-0000-000000000001";
+    // 2. Generate a local secp256k1 key pair
+    let signing_key = SigningKey::random(&mut OsRng);
 
-    // Create the key with custom tags for pre-seeded key material.
+    // 3. Convert to SecretKey and then to PKCS8 DER format
+    // First get the underlying SecretKey from SigningKey
+    let secret_key = SecretKey::from_bytes(&signing_key.to_bytes())
+        .context("Failed to create SecretKey from SigningKey bytes")?;
+
+    use k256::pkcs8::EncodePrivateKey;
+    // Now encode the SecretKey to PKCS8 DER
+    let pkcs8_der = secret_key
+        .to_pkcs8_der()
+        .context("Failed to encode key as PKCS8 DER")?;
+
+    let pkcs8_bytes = pkcs8_der.as_bytes();
+    println!("PKCS8 DER encoded key length: {} bytes", pkcs8_bytes.len());
+
+    // 4. Base64-encode the DER-encoded private key
+    let base64_key_material =
+        base64::engine::general_purpose::STANDARD.encode(pkcs8_bytes);
+    println!(
+        "Base64-encoded key length: {} chars",
+        base64_key_material.len()
+    );
+
+    // 5. Create KMS key with the custom key material tag
+    println!("Creating KMS key with injected material...");
     let create_key_resp = client
         .create_key()
-        .set_tags(Some(vec![
-            Tag::builder()
-                .tag_key("_custom_id_")
-                .tag_value(custom_key_id)
-                .build()
-                .unwrap(),
-            Tag::builder()
-                .tag_key("_custom_key_material_")
-                .tag_value(custom_key_material)
-                .build()
-                .unwrap(),
-        ]))
+        .key_usage(KeyUsageType::SignVerify)
+        .key_spec(KeySpec::EccSecgP256K1)
+        .set_tags(Some(vec![Tag::builder()
+            .tag_key("_custom_key_material_")
+            .tag_value(base64_key_material)
+            .build()
+            .unwrap()]))
         .send()
-        .await?;
+        .await
+        .context("Failed to create KMS key")?;
 
-    // Print out the created key ID
-    if let Some(metadata) = create_key_resp.key_metadata {
-        println!("Created KMS Key with ID: {}", metadata.key_id);
-    } else {
-        println!("No key metadata returned.");
-    }
+    // Get the key ID
+    let key_id = create_key_resp
+        .key_metadata
+        .context("Missing key metadata")?
+        .key_id;
+    println!("Successfully created KMS Key with ID: {}", key_id);
+
+    // 6. Prepare message hash for signing
+    let mut hasher = Sha256::new();
+    hasher.update(TEST_MESSAGE);
+    let message_hash = hasher.finalize();
+    println!("Generated message hash for signing");
+
+    // 7. Sign the hash with the original local key
+    let local_signature: Signature = signing_key.sign(&message_hash);
+    let local_signature_bytes = local_signature.to_der().to_bytes();
+    println!(
+        "Local Signature (DER base64): {}",
+        base64::engine::general_purpose::STANDARD.encode(&local_signature_bytes)
+    );
+
+    // 8. Sign the same hash using the KMS-injected key
+    let kms_sign_response = client
+        .sign()
+        .key_id(key_id)
+        .message(Blob::new(message_hash.as_slice()))
+        .message_type(MessageType::Digest)
+        .signing_algorithm(SigningAlgorithmSpec::EcdsaSha256)
+        .send()
+        .await
+        .context("Failed to sign using KMS key")?;
+
+    let kms_signature_blob = kms_sign_response
+        .signature
+        .context("Missing signature from KMS response")?;
+    let kms_signature_bytes = kms_signature_blob.into_inner();
+    println!(
+        "KMS Signature (ASN.1 base64): {}",
+        base64::engine::general_purpose::STANDARD.encode(&kms_signature_bytes)
+    );
+
+    // 9. Compare the signatures - they should match since we're using the same key
+    let kms_signature_parsed = Signature::from_der(&kms_signature_bytes)
+        .context("Failed to parse KMS signature from DER format")?;
+
+    assert_eq!(
+        local_signature, kms_signature_parsed,
+        "Signature from local key does not match signature from KMS key"
+    );
+
+    println!("✅ Test passed! Signatures from local key and KMS-injected key match!");
 
     Ok(())
 }
