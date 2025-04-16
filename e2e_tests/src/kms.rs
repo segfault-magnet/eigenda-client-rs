@@ -46,7 +46,6 @@ impl Kms {
         }
 
         let port = container.get_host_port_ipv4(4566).await?;
-        dbg!(port);
         let url = format!("http://localhost:{}", port);
 
         let sdk_config = aws_config::defaults(BehaviorVersion::latest())
