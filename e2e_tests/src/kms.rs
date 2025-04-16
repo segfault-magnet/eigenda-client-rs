@@ -286,8 +286,8 @@ mod tests {
         ) -> Result<Self> {
             println!("Processing signature explicitly as DER (KMS)");
             let (signature, recovery_id) =
-                normalize_der_signature(signature_der, message_hash, verifying_key)
-                    .context("Failed to normalize DER signature")?;
+                parse_der_and_determine_recid(signature_der, message_hash, verifying_key)
+                    .context("Failed to parse DER and determine recovery ID")?;
             Ok(Self { signature, recovery_id })
         }
 
@@ -316,7 +316,7 @@ mod tests {
         }
 
         /// Generates the 65-byte [R||S||V] representation.
-        fn to_bytes_65(&self) -> [u8; 65] {
+        fn to_rsv_bytes(&self) -> [u8; 65] {
             let sig_bytes = self.signature.to_bytes(); // This is [R||S]
             let mut result = [0u8; 65];
             result[..64].copy_from_slice(&sig_bytes);
@@ -333,9 +333,9 @@ mod tests {
         Ok((kms_proc, signing_key, verifying_key))
     }
 
-    /// Normalize a DER-encoded signature and determine the recovery ID.
-    /// This handles signatures typically returned by KMS.
-    fn normalize_der_signature(
+    /// Parses a DER-encoded signature, normalizes it, and determines the recovery ID.
+    /// Returns the normalized signature and the recovery ID.
+    fn parse_der_and_determine_recid(
         signature_der: &[u8],
         message_hash: &[u8; 32],
         expected_pubkey: &VerifyingKey,
@@ -463,12 +463,12 @@ mod tests {
         .context("Processing local signature failed")?;
 
         // Then: The processed signature can generate the correct 65 bytes
-        let bytes_65 = processed_local_sig.to_bytes_65();
+        let bytes_rsv = processed_local_sig.to_rsv_bytes();
         println!(
-            "Processed local signature (65-byte): {}",
-            hex::encode(bytes_65)
+            "Processed local signature (RSV bytes): {}",
+            hex::encode(bytes_rsv)
         );
-        assert_eq!(bytes_65.len(), 65);
+        assert_eq!(bytes_rsv.len(), 65);
 
         // And: The recoverable signature can be verified successfully
         println!("\nVerifying processed LOCAL signature:");
@@ -509,12 +509,12 @@ mod tests {
         .context("Processing KMS signature failed")?;
 
         // Then: The processed signature can generate the correct 65 bytes
-        let bytes_65 = processed_kms_sig.to_bytes_65();
+        let bytes_rsv = processed_kms_sig.to_rsv_bytes();
         println!(
-            "Processed KMS signature (65-byte): {}",
-            hex::encode(bytes_65)
+            "Processed KMS signature (RSV bytes): {}",
+            hex::encode(bytes_rsv)
         );
-        assert_eq!(bytes_65.len(), 65);
+        assert_eq!(bytes_rsv.len(), 65);
 
         // And: The recoverable signature can be verified successfully
         println!("\nVerifying processed KMS signature:");
