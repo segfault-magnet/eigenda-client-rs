@@ -1,8 +1,11 @@
 pub mod accountant;
+pub mod cert_verifier;
+pub mod contracts_bindings;
 pub mod core;
 pub mod disperser_client;
 pub mod errors;
 pub mod eth_client;
+pub mod payload_disperser;
 pub mod prover;
 pub mod relay_client;
 pub mod retrieval_client;
