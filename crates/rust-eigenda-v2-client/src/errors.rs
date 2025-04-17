@@ -1,3 +1,6 @@
+use ark_bn254::{Fr, G1Affine};
+use rust_kzg_bn254_primitives::errors::KzgError;
+
 use crate::relay_client::RelayKey;
 use prost::DecodeError;
 use rust_eigenda_signers::SignerError;
@@ -63,6 +66,27 @@ pub enum BlobError {
     InvalidQuorumNumber(u32),
     #[error("Missing field: {0}")]
     MissingField(String),
+    #[error(transparent)]
+    Bn254(#[from] Bn254Error),
+}
+
+/// Errors specific to the Relay Payload Retriever
+#[derive(Debug, thiserror::Error)]
+pub enum RelayPayloadRetrieverError {
+    #[error(transparent)]
+    RelayClient(#[from] RelayClientError),
+    #[error(transparent)]
+    Blob(#[from] BlobError),
+    #[error(transparent)]
+    Conversion(#[from] ConversionError),
+    #[error(transparent)]
+    Kzg(#[from] KzgError),
+    #[error("Unable to retrieve payload")]
+    UnableToRetrievePayload,
+    #[error("Invalid certificate: {0}")]
+    InvalidCertificate(String),
+    #[error("Retrieval request to relay timed out")]
+    RetrievalTimeout,
 }
 
 /// Errors specific to the Relay Client
@@ -101,6 +125,15 @@ pub enum EthClientError {
     Rpc(crate::eth_client::RpcErrorResponse),
     #[error("Invalid response: {0}")]
     InvalidResponse(String),
+}
+
+/// Errors related to the BN254 and its points
+#[derive(Debug, thiserror::Error)]
+pub enum Bn254Error {
+    #[error("Insufficient SRS in memory: have {0}, need {1}")]
+    InsufficientSrsInMemory(usize, usize),
+    #[error("Failed calculating multi scalar multiplication on base {:?} with scalars {:?}", .0, .1)]
+    FailedComputingMSM(Vec<G1Affine>, Vec<Fr>),
 }
 
 /// Errors specific to the Accountant
