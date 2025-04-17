@@ -37,7 +37,7 @@ impl Encode for RecoverableSignature {
         let (recovery_id, sig) = self.serialize_compact();
 
         let mut signature = [0u8; 65];
-        signature.copy_from_slice(&sig);
+        signature[0..64].copy_from_slice(&sig);
         signature[64] = recovery_id.to_i32() as u8;
         signature
     }
