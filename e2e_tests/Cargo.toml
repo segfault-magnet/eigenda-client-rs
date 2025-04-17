@@ -22,12 +22,11 @@ tokio = { version = "1.37", default-features = false, features = [
 anyhow = { version = "1.0", default-features = false, features = ["std"] }
 aws-config = { version = "1.5.5", features = ["rustls"] }
 aws-sdk-kms = { version = "1.36", features = ["rustls"] }
-secp256k1 = { version = "0.28.0", features = ["recovery", "global-context", "rand-std"] }
+secp256k1 = { version = "0.28.0", features = ["recovery", "rand-std"] }
 rand = "0.8.5"
 hex = "0.4.3"
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 async-trait = "0.1.74"
 base64 = "0.21.0"
+k256 = { version = "0.13", features = ["ecdsa"] }
 sha2 = "0.10"
-pkcs8 = { version = "0.10", features = ["alloc"] }
-der = { version = "0.7", features = ["alloc", "derive"] }
