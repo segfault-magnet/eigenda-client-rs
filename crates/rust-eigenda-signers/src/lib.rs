@@ -2,7 +2,8 @@ use async_trait::async_trait;
 // Re-export key types from secp256k1
 pub use secp256k1::ecdsa;
 pub use secp256k1::ecdsa::RecoverableSignature;
-pub use secp256k1::{Error as SecpError, Message, PublicKey}; // Re-exports RecoverableSignature, Signature, etc.
+pub use secp256k1::{Error as SecpError, Message, PublicKey};
+use tiny_keccak::Hasher; // Re-exports RecoverableSignature, Signature, etc.
 
 // Restore necessary internal import for the trait signature
 use std::error::Error;

@@ -8,7 +8,8 @@ use tonic::transport::{Channel, ClientTlsConfig};
 use crate::accountant::Accountant;
 use crate::core::eigenda_cert::{BlobCommitments, BlobHeader, PaymentHeader};
 use crate::core::{
-    BlobKey, BlobRequestSigner, LocalBlobRequestSigner, OnDemandPayment, ReservedPayment,
+    BlobKey, BlobRequestSigner, LocalBlobRequestSigner, OnDemandPayment,
+    PaymentStateRequest, ReservedPayment,
 };
 use crate::errors::DisperseError;
 use crate::generated::common::v2::{
@@ -142,7 +143,7 @@ impl DisperserClient {
 
         let signature = self
             .signer
-            .sign(blob_header.clone())
+            .sign(blob_header.blob_key()?)
             .await?
             .encode()
             .to_vec();
@@ -206,7 +207,9 @@ impl DisperserClient {
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
         let signature = self
             .signer
-            .sign_payment_state_request(timestamp as u64)
+            .sign_payment_state_request(PaymentStateRequest {
+                timestamp: timestamp as u64,
+            })
             .await?
             .encode()
             .to_vec();
