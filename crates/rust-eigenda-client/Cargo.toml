@@ -43,5 +43,4 @@ hex-literal = { workspace = true }
 backon = "0.4.4"
 
 [dev-dependencies]
-rust-eigenda-signers = { workspace = true, features = ["private-key-signer"] }
 serial_test = { workspace = true }

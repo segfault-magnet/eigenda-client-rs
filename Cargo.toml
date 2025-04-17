@@ -17,7 +17,7 @@ edition = "2021"
 
 
 [workspace.dependencies]
-rust-eigenda-signers = { path = "./crates/rust-eigenda-signers", default-features = false }
+rust-eigenda-signers = { path = "./crates/rust-eigenda-signers" }
 tokio = { version = "1", features = ["fs"] }
 tokio-stream = "0.1.16"
 rust-kzg-bn254 = "0.2.1"

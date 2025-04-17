@@ -2,7 +2,7 @@ use crate::errors::EigenClientError;
 
 use super::{config::EigenConfig, sdk::RawEigenClient};
 use async_trait::async_trait;
-use rust_eigenda_signers::Signer;
+use rust_eigenda_signers::{PrivateKeySigner, Signer};
 use std::error::Error;
 use std::sync::Arc;
 
@@ -21,7 +21,7 @@ pub trait BlobProvider: std::fmt::Debug + Send + Sync {
 
 /// EigenClient is a client for the Eigen DA service.
 #[derive(Debug, Clone)]
-pub struct EigenClient<S> {
+pub struct EigenClient<S = PrivateKeySigner> {
     pub(crate) client: Arc<RawEigenClient<S>>,
 }
 
