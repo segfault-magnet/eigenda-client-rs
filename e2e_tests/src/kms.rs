@@ -7,8 +7,12 @@ use aws_sdk_kms::{
     Client,
 };
 use base64::Engine;
-use k256::ecdsa::SigningKey;
-use k256::SecretKey;
+use secp256k1::{
+    ecdsa::{RecoverableSignature, RecoveryId, Signature},
+    Message, PublicKey, Secp256k1, SecretKey, All,
+};
+use pkcs8::{der::{self, asn1::{ObjectIdentifier, AnyRef, OctetString}, Encode}, AlgorithmIdentifierRef, PrivateKeyInfo};
+use der::Sequence;
 use testcontainers::{core::ContainerPort, runners::AsyncRunner};
 use tokio::io::AsyncBufReadExt;
 
@@ -129,8 +133,8 @@ impl KmsProcess {
         let response = self
             .client
             .create_key()
-            .key_usage(aws_sdk_kms::types::KeyUsageType::SignVerify)
-            .key_spec(aws_sdk_kms::types::KeySpec::EccSecgP256K1)
+            .key_usage(KeyUsageType::SignVerify)
+            .key_spec(KeySpec::EccSecgP256K1)
             .send()
             .await?;
 
@@ -148,26 +152,47 @@ impl KmsProcess {
     }
 
     /// Injects a secp256k1 private key into LocalStack KMS
-    ///
-    /// This uses the LocalStack-specific custom tag mechanism to inject the key material
-    /// and create a new KMS key that uses the specified private key.
     pub async fn inject_secp256k1_key(
         &self,
-        signing_key: &SigningKey,
+        secret_key: &SecretKey,
     ) -> anyhow::Result<KmsKey> {
-        // Convert to SecretKey and then to PKCS8 DER format
-        let secret_key = SecretKey::from_bytes(&signing_key.to_bytes())
-            .context("Failed to convert SigningKey to SecretKey")?;
+        // Manual PKCS#8 DER encoding following RFC 5915
+        let secret_bytes = secret_key.secret_bytes();
 
-        // Encode the SecretKey to PKCS8 DER format
-        use k256::pkcs8::EncodePrivateKey;
-        let pkcs8_der = secret_key
-            .to_pkcs8_der()
-            .context("Failed to encode key as PKCS8 DER")?;
+        // 1. Construct the inner ECPrivateKey structure
+        let ec_private_key = EcPrivateKey {
+            version: 1,
+            private_key: OctetString::new(&secret_bytes)
+                .map_err(|e| anyhow::anyhow!("Failed to create OctetString: {}", e))?,
+        };
 
-        // Base64-encode the DER-encoded private key
+        // 2. Encode the inner ECPrivateKey to DER bytes using to_der()
+        let ec_private_key_der = ec_private_key.to_der()
+             .map_err(|e| anyhow::anyhow!("Failed to encode ECPrivateKey to DER: {}", e))
+             .context("Inner ECPrivateKey DER encoding failed")?;
+
+        // 3. Define the AlgorithmIdentifier
+        let alg_id = AlgorithmIdentifierRef {
+            oid: OID_EC_PUBLIC_KEY,
+            parameters: Some(AnyRef::from(&OID_SECP256K1)),
+        };
+
+        // 4. Create the outer PrivateKeyInfo structure
+        //    The private_key field contains the DER bytes of the ECPrivateKey
+        let private_key_info = PrivateKeyInfo {
+            algorithm: alg_id,
+            private_key: &ec_private_key_der, // Use encoded inner structure
+            public_key: None,
+        };
+
+        // 5. Encode the outer PrivateKeyInfo to DER
+        let pkcs8_der_vec = private_key_info.to_der()
+            .map_err(|e| anyhow::anyhow!("Failed to encode PrivateKeyInfo to DER: {}", e))
+            .context("Outer PrivateKeyInfo DER encoding failed")?;
+
+        // Base64-encode the final DER-encoded private key
         let base64_key_material =
-            base64::engine::general_purpose::STANDARD.encode(pkcs8_der.as_bytes());
+            base64::engine::general_purpose::STANDARD.encode(&pkcs8_der_vec);
 
         // Create KMS key with the custom key material tag
         let create_key_resp = self
@@ -184,10 +209,10 @@ impl KmsProcess {
             .await
             .context("Failed to create KMS key with injected material")?;
 
-        // Extract key ID/ARN from response
+        // Extract key ID/ARN
         let key_id = create_key_resp
             .key_metadata
-            .map(|m| m.key_id)
+            .and_then(|m| Some(m.key_id))
             .context("Key ID missing from response")?;
 
         Ok(KmsKey {
@@ -254,159 +279,67 @@ impl KmsKey {
     }
 }
 
+// OID for secp256k1 curve
+const OID_SECP256K1: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.132.0.10");
+// OID for EC public key algorithm
+const OID_EC_PUBLIC_KEY: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
+
+// Define the ECPrivateKey structure
+#[derive(Clone, Debug, Eq, PartialEq, Sequence)]
+#[allow(dead_code)]
+struct EcPrivateKey {
+    version: u8,
+    private_key: OctetString,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use anyhow::{Context, Result};
-    use k256::ecdsa::signature::hazmat::PrehashSigner;
-    use k256::ecdsa::{
-        signature::hazmat::PrehashVerifier, RecoveryId, Signature, VerifyingKey,
+    use secp256k1::{
+        ecdsa::{RecoverableSignature, RecoveryId, Signature},
+        All, Message, PublicKey, Secp256k1, SecretKey,
     };
+    use pkcs8::SubjectPublicKeyInfoRef;
     use rand::rngs::OsRng;
     use sha2::{Digest, Sha256};
 
-    // --- Helper Functions & Types ---
-
-    /// Represents a recoverable ECDSA signature, storing the core
-    /// signature (R, S) and the calculated recovery ID (V).
-    /// Can generate the 65-byte [R||S||V] format on demand.
-    #[derive(Debug, Clone)]
-    struct RecoverableSignature {
-        signature: Signature,
-        recovery_id: RecoveryId,
-    }
-
-    impl RecoverableSignature {
-        /// Creates a recoverable signature from KMS DER bytes.
-        fn from_kms_der(
-            signature_der: &[u8],
-            message_hash: &[u8; 32],
-            verifying_key: &VerifyingKey,
-        ) -> Result<Self> {
-            let (signature, recovery_id) =
-                parse_der_and_determine_recid(signature_der, message_hash, verifying_key)
-                    .context("Failed to parse DER and determine recovery ID")?;
-            Ok(Self {
-                signature,
-                recovery_id,
-            })
-        }
-
-        /// Creates a recoverable signature from a local k256::Signature.
-        fn from_local_signature(
-            signature: &Signature,
-            message_hash: &[u8; 32],
-            verifying_key: &VerifyingKey,
-        ) -> Result<Self> {
-            let normalized_sig = signature.normalize_s().unwrap_or(*signature);
-            let recovery_id =
-                determine_recovery_id(&normalized_sig, message_hash, verifying_key)
-                    .context("Failed to determine recovery ID for compact signature")?;
-            Ok(Self {
-                signature: normalized_sig,
-                recovery_id,
-            })
-        }
-
-        /// Returns the signature component (R, S).
-        fn signature(&self) -> &Signature {
-            &self.signature
-        }
-
-        /// Returns the recovery ID component (V).
-        fn recovery_id(&self) -> RecoveryId {
-            self.recovery_id
-        }
-
-        /// Generates the 65-byte [R||S||V] representation.
-        fn to_rsv_bytes(&self) -> [u8; 65] {
-            let sig_bytes = self.signature.to_bytes(); // This is [R||S]
-            let mut result = [0u8; 65];
-            result[..64].copy_from_slice(&sig_bytes);
-            result[64] = self.recovery_id.to_byte();
-            result
-        }
-    }
-
     /// Helper function to set up KMS instance and generate keys
-    async fn setup_kms_and_keys() -> Result<(KmsProcess, SigningKey, VerifyingKey)> {
+    async fn setup_kms_and_keys(secp: &Secp256k1<All>) -> Result<(KmsProcess, SecretKey, PublicKey)> {
         let kms_proc = Kms::default().with_show_logs(false).start().await?;
-        let signing_key = SigningKey::random(&mut OsRng);
-        let verifying_key = *signing_key.verifying_key();
-        Ok((kms_proc, signing_key, verifying_key))
+        let secret_key = SecretKey::new(&mut OsRng);
+        let public_key = secret_key.public_key(secp);
+        Ok((kms_proc, secret_key, public_key))
     }
 
-    /// Parses a DER-encoded signature, normalizes it, and determines the recovery ID.
-    /// Returns the normalized signature and the recovery ID.
-    fn parse_der_and_determine_recid(
-        signature_der: &[u8],
-        message_hash: &[u8; 32],
-        expected_pubkey: &VerifyingKey,
-    ) -> Result<(Signature, RecoveryId)> {
-        // Parse the DER signature
-        let signature =
-            Signature::from_der(signature_der).context("Invalid DER signature")?;
-
-        // Normalize S value (ECDSA allows two valid S values, usually low-S is preferred)
-        let normalized_sig = signature.normalize_s().unwrap_or(signature);
-
-        // Determine recovery ID by trying both possibilities
-        let recovery_id =
-            determine_recovery_id(&normalized_sig, message_hash, expected_pubkey)?;
-
-        Ok((normalized_sig, recovery_id))
-    }
-
-    /// Determine the correct recovery ID for a signature by attempting recovery with both
-    /// possible IDs (0 and 1) and checking which one yields the expected public key.
-    fn determine_recovery_id(
+    /// Verify a signature using the secp256k1 library
+    fn verify_signature(
+        secp: &Secp256k1<All>,
         sig: &Signature,
         message_hash: &[u8; 32],
-        expected_pubkey: &VerifyingKey,
-    ) -> Result<RecoveryId> {
-        let recid_0 = RecoveryId::from_byte(0).context("Bad RecoveryId byte 0")?;
-        let recid_1 = RecoveryId::from_byte(1).context("Bad RecoveryId byte 1")?;
-
-        if let Ok(recovered_key) =
-            VerifyingKey::recover_from_prehash(message_hash, sig, recid_0)
-        {
-            if &recovered_key == expected_pubkey {
-                return Ok(recid_0);
-            }
-        }
-
-        if let Ok(recovered_key) =
-            VerifyingKey::recover_from_prehash(message_hash, sig, recid_1)
-        {
-            if &recovered_key == expected_pubkey {
-                return Ok(recid_1);
-            }
-        }
-
-        anyhow::bail!("Could not recover correct public key from signature")
+        expected_pubkey: &PublicKey,
+    ) -> Result<()> {
+        let message = Message::from_digest_slice(message_hash)
+            .context("Failed to create message from hash")?;
+        secp.verify_ecdsa(&message, sig, expected_pubkey)
+            .context("secp256k1 verification failed")?;
+        Ok(())
     }
 
-    /// Verify a RecoverableSignature.
-    /// Performs both standard verification and recovery verification.
+    /// Verify a recoverable signature using secp256k1 library
     fn verify_recoverable_signature(
-        rec_sig: &RecoverableSignature, // Accept the new type
+        secp: &Secp256k1<All>,
+        rec_sig: &RecoverableSignature,
         message_hash: &[u8; 32],
-        expected_verifying_key: &VerifyingKey,
+        expected_pubkey: &PublicKey,
     ) -> Result<()> {
-        // 1. Standard Verification using expected key and prehashed message
-        expected_verifying_key
-            .verify_prehash(message_hash, rec_sig.signature())
-            .context("Standard verification failed using prehashed message")?;
+        let message = Message::from_digest_slice(message_hash)
+            .context("Failed to create message from hash")?;
+        let recovered_key = secp
+            .recover_ecdsa(&message, rec_sig)
+            .context("Failed to recover public key from signature")?;
 
-        // 2. Recovery Verification
-        let recovered_key = VerifyingKey::recover_from_prehash(
-            message_hash,
-            rec_sig.signature(),
-            rec_sig.recovery_id(),
-        )
-        .context("Failed to recover public key from signature")?;
-
-        if &recovered_key == expected_verifying_key {
+        if &recovered_key == expected_pubkey {
             Ok(())
         } else {
             anyhow::bail!("Recovered key does not match expected key")
@@ -417,18 +350,29 @@ mod tests {
 
     #[tokio::test]
     async fn test_kms_key_injection_verifies_public_key() -> Result<()> {
-        let (kms_proc, signing_key, verifying_key) = setup_kms_and_keys().await?;
-        let local_pubkey_bytes =
-            verifying_key.to_encoded_point(false).as_bytes().to_vec();
+        let secp = Secp256k1::new();
+        let (kms_proc, secret_key, public_key) = setup_kms_and_keys(&secp).await?;
+        let local_pubkey_bytes = public_key.serialize_uncompressed();
 
-        let kms_key = kms_proc.inject_secp256k1_key(&signing_key).await?;
-
+        let kms_key = kms_proc.inject_secp256k1_key(&secret_key).await?;
         let kms_public_key_der = kms_key.get_public_key().await?;
-        let kms_pubkey_hex = hex::encode(&kms_public_key_der);
-        let local_pubkey_hex = hex::encode(local_pubkey_bytes);
-        assert!(
-            kms_pubkey_hex.contains(&local_pubkey_hex),
-            "KMS public key '{}' does not contain our injected local public key '{}'",
+
+        let spki = SubjectPublicKeyInfoRef::try_from(&kms_public_key_der[..])
+            .map_err(|e| anyhow::anyhow!("Failed to parse SPKI DER: {}", e))
+            .context("Parsing SubjectPublicKeyInfo failed")?;
+
+        // Access subject_public_key field directly, then call raw_bytes(). No context() needed here.
+        let kms_pubkey_bytes_slice = spki
+            .subject_public_key // Access field
+            .raw_bytes();
+
+        let kms_pubkey_hex = hex::encode(&kms_pubkey_bytes_slice);
+        let local_pubkey_hex = hex::encode(local_pubkey_bytes.as_ref());
+
+        assert_eq!(
+            kms_pubkey_bytes_slice,
+            local_pubkey_bytes.as_ref(),
+            "KMS public key \'{}\' does not match injected local public key \'{}\'",
             kms_pubkey_hex,
             local_pubkey_hex
         );
@@ -438,59 +382,76 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_and_verify_local_signature() -> Result<()> {
-        let (_, signing_key, verifying_key) = setup_kms_and_keys().await?;
+        let secp = Secp256k1::new();
+        let (_, secret_key, public_key) = setup_kms_and_keys(&secp).await?;
         let test_message = b"Test message for local signing";
         let message_hash_array: [u8; 32] = Sha256::digest(test_message).into();
+        let message = Message::from_digest_slice(&message_hash_array)
+            .context("Failed to create message from hash")?;
 
-        let local_signature: Signature = signing_key
-            .sign_prehash(&message_hash_array)
-            .expect("Failed to sign prehashed message locally");
+        let local_signature: RecoverableSignature = secp.sign_ecdsa_recoverable(&message, &secret_key);
 
-        let processed_local_sig = RecoverableSignature::from_local_signature(
-            &local_signature,
-            &message_hash_array,
-            &verifying_key,
-        )
-        .context("Processing local signature failed")?;
+        verify_recoverable_signature(&secp, &local_signature, &message_hash_array, &public_key)
+            .context("Verification of local signature failed")?;
 
-        let bytes_rsv = processed_local_sig.to_rsv_bytes();
+        let (rec_id, sig_bytes) = local_signature.serialize_compact();
+        let mut bytes_rsv = [0u8; 65];
+        bytes_rsv[..64].copy_from_slice(&sig_bytes[..]);
+        bytes_rsv[64] = rec_id.to_i32() as u8;
         assert_eq!(bytes_rsv.len(), 65);
-
-        verify_recoverable_signature(
-            &processed_local_sig,
-            &message_hash_array,
-            &verifying_key,
-        )
-        .context("Verification of processed local signature failed")?;
 
         Ok(())
     }
 
     #[tokio::test]
     async fn test_process_and_verify_kms_signature() -> Result<()> {
-        let (kms_proc, signing_key, verifying_key) = setup_kms_and_keys().await?;
-        let kms_key = kms_proc.inject_secp256k1_key(&signing_key).await?;
+        let secp = Secp256k1::new();
+        let (kms_proc, secret_key, public_key) = setup_kms_and_keys(&secp).await?;
+        let kms_key = kms_proc.inject_secp256k1_key(&secret_key).await?;
         let test_message = b"Test message for KMS signing";
         let message_hash_array: [u8; 32] = Sha256::digest(test_message).into();
+        let message = Message::from_digest_slice(&message_hash_array)
+            .context("Failed to create message from hash")?;
 
         let kms_signature_der_bytes = kms_key.sign_digest(&message_hash_array).await?;
 
-        let processed_kms_sig = RecoverableSignature::from_kms_der(
-            &kms_signature_der_bytes,
-            &message_hash_array,
-            &verifying_key,
-        )
-        .context("Processing KMS signature failed")?;
+        let mut kms_sig = Signature::from_der(&kms_signature_der_bytes)
+            .context("Failed to parse DER signature from KMS")?;
 
-        let bytes_rsv = processed_kms_sig.to_rsv_bytes();
+        kms_sig.normalize_s();
+
+        verify_signature(&secp, &kms_sig, &message_hash_array, &public_key)
+            .context("Verification of KMS non-recoverable signature failed")?;
+
+        let sig_compact_bytes = kms_sig.serialize_compact();
+
+        let rec_id_0 = RecoveryId::from_i32(0).unwrap();
+        let rec_id_1 = RecoveryId::from_i32(1).unwrap();
+
+        let rec_sig_0 = RecoverableSignature::from_compact(&sig_compact_bytes, rec_id_0)
+            .context("Failed to create recoverable signature with recid 0")?;
+        let rec_sig_1 = RecoverableSignature::from_compact(&sig_compact_bytes, rec_id_1)
+            .context("Failed to create recoverable signature with recid 1")?;
+
+        let recovered_key_0 = secp.recover_ecdsa(&message, &rec_sig_0);
+        let recovered_key_1 = secp.recover_ecdsa(&message, &rec_sig_1);
+
+        let kms_recoverable_sig = if recovered_key_0 == Ok(public_key) {
+            rec_sig_0
+        } else if recovered_key_1 == Ok(public_key) {
+            rec_sig_1
+        } else {
+            anyhow::bail!("Could not recover the correct public key from KMS signature")
+        };
+
+        verify_recoverable_signature(&secp, &kms_recoverable_sig, &message_hash_array, &public_key)
+            .context("Verification of processed KMS signature failed")?;
+
+        let (rec_id, sig_bytes) = kms_recoverable_sig.serialize_compact();
+        let mut bytes_rsv = [0u8; 65];
+        bytes_rsv[..64].copy_from_slice(&sig_bytes[..]);
+        bytes_rsv[64] = rec_id.to_i32() as u8;
         assert_eq!(bytes_rsv.len(), 65);
-
-        verify_recoverable_signature(
-            &processed_kms_sig,
-            &message_hash_array,
-            &verifying_key,
-        )
-        .context("Verification of processed KMS signature failed")?;
 
         Ok(())
     }
