@@ -11,7 +11,7 @@ edition.workspace = true
 testcontainers = { version = "0.20", default-features = false, features = [
   "watchdog",
 ] }
-rust-eigenda-client = { path = "../crates/rust-eigenda-client/" }
+rust-eigenda-signers = { path = "../crates/rust-eigenda-signers/" }
 tokio = { version = "1.37", default-features = false, features = [
   "macros",
   "rt-multi-thread",
