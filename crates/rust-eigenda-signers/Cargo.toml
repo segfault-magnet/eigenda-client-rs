@@ -7,8 +7,19 @@ description = "EigenDA Signers"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 
+[features]
+default = ["local-signer"]
+local-signer = []
+
 [dependencies]
+# Revert to inheriting from workspace
 secp256k1 = { workspace = true }
-async-trait = { workspace = true }
+async-trait = "0.1.74"
 thiserror = { workspace = true }
 tiny-keccak = { workspace = true }
+rand = "0.8.5"
+
+[dev-dependencies]
+# Add dev dependencies for tests
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

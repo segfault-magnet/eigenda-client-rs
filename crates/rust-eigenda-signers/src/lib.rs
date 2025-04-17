@@ -1,9 +1,15 @@
 use async_trait::async_trait;
 use secp256k1::{
-    ecdsa::{RecoveryId, Signature},
-    Error as SecpError, PublicKey,
+    ecdsa::{RecoveryId as SecpRecoveryId, Signature as SecpSignature},
+    Error as SecpError, PublicKey as SecpPublicKey,
 };
 use std::error::Error;
+
+// Conditionally compile and expose the local signer module
+#[cfg(feature = "local-signer")]
+pub mod local;
+#[cfg(feature = "local-signer")]
+pub use local::LocalSigner;
 
 /// Represents a potential error during the signing process.
 #[derive(Debug, thiserror::Error)]
@@ -30,7 +36,7 @@ pub trait Signer: Send + Sync + std::fmt::Debug {
     async fn sign_digest(&self, digest: [u8; 32]) -> Result<RecoverableSignature, SignerError>;
 
     /// Returns the public key associated with this signer.
-    fn public_key(&self) -> PublicKey;
+    fn public_key(&self) -> SecpPublicKey;
 
     /// Returns the Ethereum address associated with this signer.
     fn address(&self) -> [u8; 20] {
@@ -48,18 +54,18 @@ pub trait Signer: Send + Sync + std::fmt::Debug {
 /// Can generate the 65-byte [R||S||V] format on demand.
 #[derive(Debug, Clone)]
 pub struct RecoverableSignature {
-    pub signature: Signature,
-    pub recovery_id: RecoveryId,
+    pub signature: SecpSignature,
+    pub recovery_id: SecpRecoveryId,
 }
 
 impl RecoverableSignature {
     /// Returns the signature component (R, S).
-    pub fn signature(&self) -> &Signature {
+    pub fn signature(&self) -> &SecpSignature {
         &self.signature
     }
 
     /// Returns the recovery ID component (V).
-    pub fn recovery_id(&self) -> RecoveryId {
+    pub fn recovery_id(&self) -> SecpRecoveryId {
         self.recovery_id
     }
 

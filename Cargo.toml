@@ -35,7 +35,7 @@ byteorder = "1.5.0"
 url = "2.5.2"
 tempfile = "3.0.2"
 hex-literal = "0.3"
-secp256k1 = { version = "0.27.0", features = ["recovery", "global-context"] }
+secp256k1 = { version = "0.27.0", features = ["recovery", "global-context", "rand"] }
 bytes = {version= "1", features = ["serde"]}
 reqwest = {version = "0.12", features = ["json"] }
 prost = "0.12.6"
@@ -43,7 +43,7 @@ num-bigint = "0.4.6"
 rand = "0.8"
 sha2 = "0.10.8"
 sha3 = "0.10.8"
-tiny-keccak = "2"
+tiny-keccak = { version = "2", features = ["keccak"] }
 ethabi = "18.0.0"
 rust-kzg-bn254-primitives = "0.1.0"
 rust-kzg-bn254-verifier = "0.1.0"
