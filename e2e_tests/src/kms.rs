@@ -17,11 +17,7 @@ use k256::ecdsa::SigningKey;
 use k256::ecdsa::VerifyingKey;
 use k256::pkcs8::DecodePublicKey;
 use rust_eigenda_signers::{Signer, SignerError};
-use secp256k1::{
-    ecdsa::{self as secp_ecdsa, RecoverableSignature},
-    PublicKey,
-    Message
-};
+use rust_eigenda_signers::{ecdsa, Message, PublicKey};
 use std::fmt;
 
 #[derive(Default)]
@@ -270,7 +266,7 @@ impl Signer for AwsKmsSigner {
     async fn sign_digest(
         &self,
         message: &Message,
-    ) -> Result<RecoverableSignature, SignerError> {
+    ) -> Result<ecdsa::RecoverableSignature, SignerError> {
         // Get bytes from message for KMS call
         let digest_bytes: &[u8; 32] = message.as_ref();
 
@@ -315,17 +311,17 @@ impl Signer for AwsKmsSigner {
         .map_err(|e| SignerError::SignerSpecific(e.into()))?;
 
         // 5. Convert k256 signature to secp256k1 signature
-        let secp_sig = secp_ecdsa::Signature::from_compact(&k256_sig_normalized.to_bytes())
+        let secp_sig = ecdsa::Signature::from_compact(&k256_sig_normalized.to_bytes())
             // Map secp256k1 error to SignerSpecific
             .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
 
         // 6. Convert k256 recovery ID to secp256k1 recovery ID
-        let secp_recid = secp_ecdsa::RecoveryId::from_i32(k256_recid.to_byte() as i32)
+        let secp_recid = ecdsa::RecoveryId::from_i32(k256_recid.to_byte() as i32)
             // Map secp256k1 error to SignerSpecific
             .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
 
         // 9. Construct and return the standard secp256k1 RecoverableSignature struct
-        let standard_recoverable_sig = RecoverableSignature::from_compact(
+        let standard_recoverable_sig = ecdsa::RecoverableSignature::from_compact(
             secp_sig.serialize_compact().as_slice(), // Use signature bytes
             secp_recid,                              // Use recovery ID
         )
@@ -380,7 +376,9 @@ mod tests {
     use k256::ecdsa::SigningKey as K256SigningKey;
     use rand::rngs::OsRng;
     use rust_eigenda_signers::LocalSigner;
-    use secp256k1::{ecdsa::RecoverableSignature as SecpRecoverableSignature, Secp256k1, Message as SecpMessage};
+    use rust_eigenda_signers::ecdsa::RecoverableSignature as SecpRecoverableSignature;
+    use rust_eigenda_signers::Message as SecpMessage;
+    use secp256k1::Secp256k1;
     use sha2::{Digest, Sha256};
 
     /// Helper function to set up KMS instance and generate keys
@@ -413,9 +411,9 @@ mod tests {
     /// Helper to verify a signature using secp256k1 public key recovery
     // Update to accept standard secp256k1::ecdsa::RecoverableSignature
     fn verify_signature_recovery(
-        rec_sig: &SecpRecoverableSignature, // Use standard type
-        message: &SecpMessage, // Accept Message type
-        expected_pubkey: &PublicKey, // Use standard PublicKey type
+        rec_sig: &SecpRecoverableSignature, // Use re-exported type (via alias)
+        message: &SecpMessage, // Use re-exported type (via alias)
+        expected_pubkey: &PublicKey, // Use re-exported type
     ) -> Result<()> {
         let secp = Secp256k1::new();
         let recovered_pk = secp
@@ -436,9 +434,9 @@ mod tests {
 
         // 1. Compare Public Keys
         // Get expected key directly from LocalSigner
-        let expected_secp_pubkey = local_signer.public_key();
+        let expected_secp_pubkey = local_signer.public_key(); // Returns re-exported PublicKey
 
-        let actual_secp_pubkey = aws_signer.public_key();
+        let actual_secp_pubkey = aws_signer.public_key(); // Returns re-exported PublicKey
         assert_eq!(
             actual_secp_pubkey, expected_secp_pubkey,
             "Public key from AwsKmsSigner does not match the expected key from LocalSigner"
@@ -465,18 +463,18 @@ mod tests {
         let test_message_bytes = b"Test message for KMS signer trait implementation";
         let message_hash_array: [u8; 32] = Sha256::digest(test_message_bytes).into();
         // Create Message before calling sign_digest
-        let message = SecpMessage::from_slice(&message_hash_array)
+        let message = SecpMessage::from_slice(&message_hash_array) // Use re-exported Message (via alias)
             .expect("Failed to create Message from digest");
 
         // Sign using the AwsKmsSigner trait method
         // Expect standard secp256k1::ecdsa::RecoverableSignature struct now
-        let rec_sig: SecpRecoverableSignature = aws_signer
+        let rec_sig: SecpRecoverableSignature = aws_signer // Use re-exported type (via alias)
             .sign_digest(&message) // Pass the Message
             .await
             .context("Signing with AwsKmsSigner failed")?;
 
         // Get the expected public key from LocalSigner
-        let expected_pubkey = local_signer.public_key(); // Already verified in another test
+        let expected_pubkey = local_signer.public_key(); // Returns re-exported PublicKey
 
         // Verify the signature using public key recovery
         // Pass the standard secp256k1::ecdsa::RecoverableSignature struct and Message
