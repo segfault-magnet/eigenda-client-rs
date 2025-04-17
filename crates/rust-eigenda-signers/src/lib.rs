@@ -3,7 +3,7 @@ use async_trait::async_trait;
 pub use secp256k1::{Error as SecpError, Message, PublicKey};
 pub use secp256k1::ecdsa; // Re-exports RecoverableSignature, Signature, etc.
 
-// Internal imports use the original path
+// Restore necessary internal import for the trait signature
 use secp256k1::ecdsa::RecoverableSignature;
 use std::error::Error;
 
@@ -25,16 +25,7 @@ pub enum SignerError {
 /// A trait for signing messages using different key management strategies.
 #[async_trait]
 pub trait Signer: Send + Sync + std::fmt::Debug {
-    /// Signs a 32-byte digest and returns a recoverable signature.
-    ///
-    /// # Arguments
-    ///
-    /// * `digest` - The 32-byte digest to sign.
-    ///
-    /// # Returns
-    ///
-    /// A `Result` containing the 65-byte recoverable signature `[R || S || V]` on success,
-    /// or a `SignerError` on failure.
+    /// Signs a digest using the signer's key.
     async fn sign_digest(
         &self,
         message: &Message,
@@ -54,7 +45,7 @@ pub trait Signer: Send + Sync + std::fmt::Debug {
     }
 }
 
-// // Helper function (assuming keccak256 is available or defined elsewhere)
+// Helper function to compute Keccak256 hash.
 fn keccak256(input: &[u8]) -> [u8; 32] {
     use tiny_keccak::{Hasher, Keccak};
     let mut hasher = Keccak::v256();

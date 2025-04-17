@@ -1,4 +1,4 @@
-use crate::{RecoverableSignature, Signer, SignerError};
+use crate::{Signer, SignerError, ecdsa};
 use async_trait::async_trait;
 use rand::rngs::OsRng;
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
@@ -14,11 +14,7 @@ impl LocalSigner {
     /// Creates a new signer with a randomly generated private key.
     pub fn random() -> Self {
         let secp = Secp256k1::new();
-        // generate_keypair returns (SecretKey, PublicKey)
         let (secret_key, _) = secp.generate_keypair(&mut OsRng);
-        // No need to extract from KeyPair struct
-        // let keypair = secp.generate_keypair(&mut OsRng);
-        // let secret_key = SecretKey::from_keypair(&keypair);
         Self { secret_key, secp }
     }
 
@@ -34,7 +30,7 @@ impl Signer for LocalSigner {
     async fn sign_digest(
         &self,
         message: &Message,
-    ) -> Result<RecoverableSignature, SignerError> {
+    ) -> Result<ecdsa::RecoverableSignature, SignerError> {
         let sig = self.secp.sign_ecdsa_recoverable(message, &self.secret_key);
         Ok(sig)
     }
@@ -49,7 +45,7 @@ mod tests {
     use crate::keccak256;
 
     use super::*;
-    use secp256k1::ecdsa::RecoverableSignature as SecpRecoverableSignature;
+    use crate::ecdsa::RecoverableSignature as SecpRecoverableSignature;
     use sha2::{Digest, Sha256};
     use tokio;
 

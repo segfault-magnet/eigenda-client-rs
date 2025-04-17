@@ -11,13 +11,11 @@ use k256::SecretKey;
 use testcontainers::{core::ContainerPort, runners::AsyncRunner};
 use tokio::io::AsyncBufReadExt;
 
-// Add necessary imports
 use async_trait::async_trait;
 use k256::ecdsa::SigningKey;
 use k256::ecdsa::VerifyingKey;
 use k256::pkcs8::DecodePublicKey;
-use rust_eigenda_signers::{Signer, SignerError};
-use rust_eigenda_signers::{ecdsa, Message, PublicKey};
+use rust_eigenda_signers::{ecdsa, Message, PublicKey, Signer, SignerError};
 use std::fmt;
 
 #[derive(Default)]
@@ -168,11 +166,10 @@ impl KmsProcess {
         let k256_pub_key = VerifyingKey::from_public_key_der(&public_key_der)
             .context("Failed to parse public key DER from KMS")?;
 
-        // Convert k256 public key to secp256k1 public key (use specific type)
+        // Convert k256 public key to secp256k1 public key
         let secp_pub_key = PublicKey::from_slice(
-            k256_pub_key.to_encoded_point(false).as_bytes(), // Get uncompressed bytes
+            k256_pub_key.to_encoded_point(false).as_bytes(),
         )
-        // Map secp256k1 error to SignerSpecific
         .map_err(|e| SignerError::SignerSpecific(Box::new(e)))
         .context("Failed to convert k256 pubkey to secp256k1 pubkey")?;
 
@@ -193,7 +190,6 @@ impl KmsProcess {
         &self,
         signing_key: &SigningKey,
     ) -> anyhow::Result<String> {
-        // Convert to SecretKey and then to PKCS8 DER format
         let secret_key = SecretKey::from_bytes(&signing_key.to_bytes())
             .context("Failed to convert SigningKey to SecretKey")?;
 
@@ -222,13 +218,12 @@ impl KmsProcess {
             .await
             .context("Failed to create KMS key with injected material")?;
 
-        // Extract key ID/ARN from response
         let key_id = create_key_resp
             .key_metadata
             .map(|m| m.key_id)
             .context("Key ID missing from response")?;
 
-        Ok(key_id) // Return the key ID string
+        Ok(key_id)
     }
 
     pub fn client(&self) -> &Client {
@@ -240,13 +235,12 @@ impl KmsProcess {
     }
 }
 
-// Define the new AwsKmsSigner struct
 #[derive(Clone)]
 pub struct AwsKmsSigner {
     key_id: String,
     client: Client,
-    public_key: PublicKey,            // Use standard PublicKey type
-    k256_verifying_key: VerifyingKey, // Store k256 version for recovery ID calculation
+    public_key: PublicKey,
+    k256_verifying_key: VerifyingKey, // Store k256 key for internal use
 }
 
 // Implement Debug manually to avoid showing the client details fully
@@ -267,10 +261,8 @@ impl Signer for AwsKmsSigner {
         &self,
         message: &Message,
     ) -> Result<ecdsa::RecoverableSignature, SignerError> {
-        // Get bytes from message for KMS call
         let digest_bytes: &[u8; 32] = message.as_ref();
 
-        // 1. Sign using KMS (returns DER signature)
         let sign_response = self
             .client
             .sign()
@@ -280,52 +272,39 @@ impl Signer for AwsKmsSigner {
             .signing_algorithm(aws_sdk_kms::types::SigningAlgorithmSpec::EcdsaSha256)
             .send()
             .await // Ensure .await is before map_err
-            // Map SDK error to SignerSpecific
             .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
 
         let signature_der = sign_response
             .signature
             .ok_or_else(|| {
-                // Map missing signature error to SignerSpecific
                 SignerError::SignerSpecific(
                     anyhow::anyhow!("Signature missing from KMS response").into(),
                 )
             })?
             .into_inner();
 
-        // 2. Parse DER signature using k256
         let k256_sig = k256::ecdsa::Signature::from_der(&signature_der)
-             // Map k256 DER parsing error to SignerSpecific
             .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
 
-        // 3. Normalize the k256 signature (low-S)
         let k256_sig_normalized = k256_sig.normalize_s().unwrap_or(k256_sig);
 
-        // 4. Determine k256 Recovery ID
         let k256_recid = determine_k256_recovery_id(
             &k256_sig_normalized,
             digest_bytes,
-            &self.k256_verifying_key,
+            &self.k256_verifying_key, // Use stored k256 key for internal use
         )
-        // Map recovery ID determination error (anyhow) to SignerSpecific
         .map_err(|e| SignerError::SignerSpecific(e.into()))?;
 
-        // 5. Convert k256 signature to secp256k1 signature
         let secp_sig = ecdsa::Signature::from_compact(&k256_sig_normalized.to_bytes())
-            // Map secp256k1 error to SignerSpecific
             .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
 
-        // 6. Convert k256 recovery ID to secp256k1 recovery ID
         let secp_recid = ecdsa::RecoveryId::from_i32(k256_recid.to_byte() as i32)
-            // Map secp256k1 error to SignerSpecific
             .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
 
-        // 9. Construct and return the standard secp256k1 RecoverableSignature struct
         let standard_recoverable_sig = ecdsa::RecoverableSignature::from_compact(
-            secp_sig.serialize_compact().as_slice(), // Use signature bytes
-            secp_recid,                              // Use recovery ID
+            secp_sig.serialize_compact().as_slice(),
+            secp_recid,
         )
-        // Map secp256k1 error to SignerSpecific
         .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
         
         Ok(standard_recoverable_sig)
@@ -334,12 +313,10 @@ impl Signer for AwsKmsSigner {
     fn public_key(&self) -> PublicKey {
         self.public_key
     }
-
-    // address() method uses the default implementation from the trait
-    // which calculates the address from the public_key()
 }
 
-// Helper function to determine k256 recovery ID (moved from tests)
+// Helper function to determine k256 recovery ID.
+// Necessary because KMS returns a DER signature, and we need to extract R, S, and find V.
 fn determine_k256_recovery_id(
     sig: &k256::ecdsa::Signature,
     message_hash: &[u8; 32],
@@ -381,43 +358,34 @@ mod tests {
     use secp256k1::Secp256k1;
     use sha2::{Digest, Sha256};
 
-    /// Helper function to set up KMS instance and generate keys
-    /// Returns the KmsProcess, the original k256 key (for comparison), and the AwsKmsSigner
     async fn setup_kms_and_signer() -> Result<(KmsProcess, LocalSigner, AwsKmsSigner)> {
         let kms_proc = Kms::default().with_show_logs(false).start().await?;
-
-        // Generate k256 secret key first
+        
         let k256_secret_key = k256::SecretKey::random(&mut OsRng);
         let k256_signing_key = K256SigningKey::from(&k256_secret_key);
-
-        // Create secp256k1 SecretKey from the same bytes for LocalSigner
+        
         let secp_secret_key =
             secp256k1::SecretKey::from_slice(&k256_secret_key.to_bytes())
                 .expect("Failed to create secp256k1 secret key from k256 bytes");
         let local_signer = LocalSigner::new(secp_secret_key);
 
-        // Inject the k256 key and get the KMS key ID (now returns String)
         let kms_key_id = kms_proc
-            .inject_secp256k1_key(&k256_signing_key) // Inject accepts k256::ecdsa::SigningKey
+            .inject_secp256k1_key(&k256_signing_key)
             .await?;
 
-        // Create the AwsKmsSigner instance using the key ID
         let aws_signer = kms_proc.get_signer(kms_key_id).await?;
 
-        // Return LocalSigner instead of K256SigningKey
         Ok((kms_proc, local_signer, aws_signer))
     }
 
-    /// Helper to verify a signature using secp256k1 public key recovery
-    // Update to accept standard secp256k1::ecdsa::RecoverableSignature
     fn verify_signature_recovery(
-        rec_sig: &SecpRecoverableSignature, // Use re-exported type (via alias)
-        message: &SecpMessage, // Use re-exported type (via alias)
-        expected_pubkey: &PublicKey, // Use re-exported type
+        rec_sig: &SecpRecoverableSignature,
+        message: &SecpMessage,
+        expected_pubkey: &PublicKey,
     ) -> Result<()> {
         let secp = Secp256k1::new();
         let recovered_pk = secp
-            .recover_ecdsa(message, rec_sig) // Pass message directly
+            .recover_ecdsa(message, rec_sig)
             .context("Failed to recover public key")?;
 
         if &recovered_pk == expected_pubkey {
@@ -429,25 +397,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_kms_signer_public_key_and_address() -> Result<()> {
-        // Get LocalSigner from setup
         let (_kms_proc, local_signer, aws_signer) = setup_kms_and_signer().await?;
 
-        // 1. Compare Public Keys
-        // Get expected key directly from LocalSigner
-        let expected_secp_pubkey = local_signer.public_key(); // Returns re-exported PublicKey
-
-        let actual_secp_pubkey = aws_signer.public_key(); // Returns re-exported PublicKey
+        let expected_secp_pubkey = local_signer.public_key();
+        let actual_secp_pubkey = aws_signer.public_key();
         assert_eq!(
             actual_secp_pubkey, expected_secp_pubkey,
             "Public key from AwsKmsSigner does not match the expected key from LocalSigner"
         );
 
-        // 2. Compare Addresses
-        // Get expected address directly from LocalSigner
         let expected_address = local_signer.address();
-
-        let actual_address = aws_signer.address(); // Uses trait default impl
-
+        let actual_address = aws_signer.address();
         assert_eq!(
             actual_address, expected_address,
             "Address from AwsKmsSigner does not match the expected address from LocalSigner"
@@ -458,26 +418,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_kms_signer_sign_and_verify() -> Result<()> {
-        // Update setup function return type
         let (_kms_proc, local_signer, aws_signer) = setup_kms_and_signer().await?;
         let test_message_bytes = b"Test message for KMS signer trait implementation";
         let message_hash_array: [u8; 32] = Sha256::digest(test_message_bytes).into();
-        // Create Message before calling sign_digest
-        let message = SecpMessage::from_slice(&message_hash_array) // Use re-exported Message (via alias)
+        let message = SecpMessage::from_slice(&message_hash_array)
             .expect("Failed to create Message from digest");
 
-        // Sign using the AwsKmsSigner trait method
-        // Expect standard secp256k1::ecdsa::RecoverableSignature struct now
-        let rec_sig: SecpRecoverableSignature = aws_signer // Use re-exported type (via alias)
-            .sign_digest(&message) // Pass the Message
+        let rec_sig: SecpRecoverableSignature = aws_signer
+            .sign_digest(&message)
             .await
             .context("Signing with AwsKmsSigner failed")?;
 
-        // Get the expected public key from LocalSigner
-        let expected_pubkey = local_signer.public_key(); // Returns re-exported PublicKey
+        let expected_pubkey = local_signer.public_key();
 
-        // Verify the signature using public key recovery
-        // Pass the standard secp256k1::ecdsa::RecoverableSignature struct and Message
         verify_signature_recovery(&rec_sig, &message, &expected_pubkey)
             .context("Signature verification failed")?;
 
