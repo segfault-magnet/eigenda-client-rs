@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 // Re-export key types from secp256k1
 pub use secp256k1::ecdsa;
+pub use secp256k1::ecdsa::RecoverableSignature;
 pub use secp256k1::{Error as SecpError, Message, PublicKey}; // Re-exports RecoverableSignature, Signature, etc.
 
 // Restore necessary internal import for the trait signature
-use secp256k1::ecdsa::RecoverableSignature;
 use std::error::Error;
 
 #[cfg(feature = "private-key-signer")]
@@ -20,6 +20,27 @@ pub use secp256k1::SecretKey;
 pub enum SignerError {
     #[error("Signer-specific implementation error")]
     SignerSpecific(#[source] Box<dyn Error + Send + Sync>),
+}
+
+trait Sealed {}
+
+impl Sealed for RecoverableSignature {}
+
+#[allow(private_bounds)]
+pub trait Encode: Sealed {
+    fn encode(&self) -> [u8; 65];
+}
+
+impl Encode for RecoverableSignature {
+    // TODO: segfault find better name
+    fn encode(&self) -> [u8; 65] {
+        let (recovery_id, sig) = self.serialize_compact();
+
+        let mut signature = [0u8; 65];
+        signature.copy_from_slice(&sig);
+        signature[64] = recovery_id.to_i32() as u8;
+        signature
+    }
 }
 
 /// A trait for signing messages using different key management strategies.

@@ -19,7 +19,7 @@ use crate::{
     },
 };
 use byteorder::{BigEndian, ByteOrder};
-use rust_eigenda_signers::{Message, PublicKey, Signer};
+use rust_eigenda_signers::{Encode, Message, PublicKey, Signer};
 use tiny_keccak::{Hasher, Keccak};
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
@@ -318,18 +318,16 @@ impl<S> RawEigenClient<S> {
         let digest = self.keccak256(&buf);
 
         let msg = Message::from_slice(&digest).expect("digest to be 32 bytes");
-        let signature = self.signer.sign_digest(&msg).await.map_err(|e| {
-            EigenClientError::Communication(CommunicationError::Signing(e))
-        })?;
-        let (recovery_id, sig) = signature.serialize_compact();
-
-        let mut signature = Vec::with_capacity(65);
-        signature.extend_from_slice(&sig);
-        signature.push(recovery_id.to_i32() as u8);
+        let signature = self
+            .signer
+            .sign_digest(&msg)
+            .await
+            .map_err(|e| EigenClientError::Communication(CommunicationError::Signing(e)))?
+            .encode();
 
         let req = disperser::AuthenticatedRequest {
             payload: Some(AuthenticationData(disperser::AuthenticationData {
-                authentication_data: signature,
+                authentication_data: signature.to_vec(),
             })),
         };
 

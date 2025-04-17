@@ -1,6 +1,6 @@
 use crate::relay_client::RelayKey;
-use hex::FromHexError;
 use prost::DecodeError;
+use rust_eigenda_signers::SignerError;
 
 /// Errors returned by this crate
 #[derive(Debug, thiserror::Error)]
@@ -145,16 +145,6 @@ pub enum DisperseError {
     Signer(#[from] SignerError),
 }
 
-/// Errors specific to the Signer
-#[derive(Debug, thiserror::Error)]
-pub enum SignerError {
-    #[error("Failed to parse private key: {0}")]
-    PrivateKey(#[from] FromHexError),
-    #[error(transparent)]
-    Secp(#[from] secp256k1::Error),
-    #[error(transparent)]
-    Conversion(#[from] ConversionError),
-}
 /// Errors specific to the PayloadDisperser
 #[derive(Debug, thiserror::Error)]
 pub enum PayloadDisperserError {

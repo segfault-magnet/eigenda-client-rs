@@ -2,6 +2,7 @@ use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use hex::ToHex;
+use rust_eigenda_signers::Encode;
 use tonic::transport::{Channel, ClientTlsConfig};
 
 use crate::accountant::Accountant;
@@ -14,8 +15,9 @@ use crate::generated::common::v2::{
     BlobHeader as BlobHeaderProto, PaymentHeader as PaymentHeaderProto,
 };
 use crate::generated::disperser::v2::{
-    disperser_client, BlobCommitmentReply, BlobCommitmentRequest, BlobStatus, BlobStatusReply,
-    BlobStatusRequest, DisperseBlobRequest, GetPaymentStateReply, GetPaymentStateRequest,
+    disperser_client, BlobCommitmentReply, BlobCommitmentRequest, BlobStatus,
+    BlobStatusReply, BlobStatusRequest, DisperseBlobRequest, GetPaymentStateReply,
+    GetPaymentStateRequest,
 };
 
 const BYTES_PER_SYMBOL: usize = 32;
@@ -112,7 +114,8 @@ impl DisperserClient {
         let Some(blob_commitments) = blob_commitment_reply.blob_commitment else {
             return Err(DisperseError::EmptyBlobCommitment);
         };
-        let core_blob_commitments: BlobCommitments = blob_commitments.clone().try_into()?;
+        let core_blob_commitments: BlobCommitments =
+            blob_commitments.clone().try_into()?;
         if core_blob_commitments.length != symbol_length as u32 {
             return Err(DisperseError::CommitmentLengthMismatch(
                 core_blob_commitments.length,
@@ -137,7 +140,12 @@ impl DisperserClient {
             .hash()?,
         };
 
-        let signature = self.signer.sign(blob_header.clone())?;
+        let signature = self
+            .signer
+            .sign(blob_header.clone())
+            .await?
+            .encode()
+            .to_vec();
         let disperse_request = DisperseBlobRequest {
             blob: data.to_vec(),
             blob_header: Some(BlobHeaderProto {
@@ -196,7 +204,12 @@ impl DisperserClient {
     pub async fn payment_state(&mut self) -> Result<GetPaymentStateReply, DisperseError> {
         let account_id = self.signer.account_id().encode_hex();
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-        let signature = self.signer.sign_payment_state_request(timestamp as u64)?;
+        let signature = self
+            .signer
+            .sign_payment_state_request(timestamp as u64)
+            .await?
+            .encode()
+            .to_vec();
         let request = GetPaymentStateRequest {
             account_id,
             signature,
