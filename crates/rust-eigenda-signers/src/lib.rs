@@ -1,11 +1,9 @@
 use async_trait::async_trait;
 use secp256k1::{
-    ecdsa::RecoverableSignature,
-    Error as SecpError, PublicKey as SecpPublicKey,
+    ecdsa::RecoverableSignature, Error as SecpError, PublicKey as SecpPublicKey,
 };
 use std::error::Error;
 
-// Conditionally compile and expose the local signer module
 #[cfg(feature = "local-signer")]
 pub mod local;
 #[cfg(feature = "local-signer")]
@@ -33,7 +31,10 @@ pub trait Signer: Send + Sync + std::fmt::Debug {
     ///
     /// A `Result` containing the 65-byte recoverable signature `[R || S || V]` on success,
     /// or a `SignerError` on failure.
-    async fn sign_digest(&self, digest: [u8; 32]) -> Result<RecoverableSignature, SignerError>;
+    async fn sign_digest(
+        &self,
+        digest: [u8; 32],
+    ) -> Result<RecoverableSignature, SignerError>;
 
     /// Returns the public key associated with this signer.
     fn public_key(&self) -> SecpPublicKey;
