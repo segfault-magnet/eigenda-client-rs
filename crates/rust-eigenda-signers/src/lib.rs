@@ -70,9 +70,13 @@ pub trait Signer: Send + Sync + std::fmt::Debug {
 // Helper function to compute Keccak256 hash.
 fn keccak256(input: &[u8]) -> [u8; 32] {
     use tiny_keccak::{Hasher, Keccak};
+
     let mut hasher = Keccak::v256();
-    let mut output = [0u8; 32];
+
     hasher.update(input);
+
+    let mut output = [0u8; 32];
     hasher.finalize(&mut output);
+
     output
 }

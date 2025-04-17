@@ -1,6 +1,5 @@
 use crate::{ecdsa, Signer, SignerError};
 use async_trait::async_trait;
-use rand::rngs::OsRng;
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 
 /// A signer that uses a local private key stored in memory.
@@ -12,10 +11,9 @@ pub struct PrivateKeySigner {
 
 impl PrivateKeySigner {
     /// Creates a new signer with a randomly generated private key.
-    // TODO: segfault rand source as arg
-    pub fn random() -> Self {
+    pub fn random<R: rand::Rng + ?Sized>(rng: &mut R) -> Self {
         let secp = Secp256k1::new();
-        let (secret_key, _) = secp.generate_keypair(&mut OsRng);
+        let (secret_key, _) = secp.generate_keypair(rng);
         Self { secret_key, secp }
     }
 
@@ -23,6 +21,10 @@ impl PrivateKeySigner {
     pub fn new(secret_key: SecretKey) -> Self {
         let secp = Secp256k1::new();
         Self { secret_key, secp }
+    }
+
+    pub fn secret_key(&self) -> SecretKey {
+        self.secret_key
     }
 }
 
@@ -47,12 +49,13 @@ mod tests {
 
     use super::*;
     use crate::ecdsa::RecoverableSignature as SecpRecoverableSignature;
+    use rand::thread_rng;
     use sha2::{Digest, Sha256};
     use tokio;
 
     #[tokio::test]
     async fn test_local_signer_sign_and_verify() {
-        let signer = PrivateKeySigner::random();
+        let signer = PrivateKeySigner::random(&mut thread_rng());
         let public_key = signer.public_key();
 
         let message_bytes = b"Test message for local signer";
@@ -73,7 +76,7 @@ mod tests {
 
     #[test]
     fn test_local_signer_address() {
-        let signer = PrivateKeySigner::random();
+        let signer = PrivateKeySigner::random(&mut thread_rng());
         let public_key = signer.public_key();
         let address = signer.address();
 
