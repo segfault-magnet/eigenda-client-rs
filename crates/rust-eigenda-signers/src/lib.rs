@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use secp256k1::{
-    ecdsa::{RecoveryId as SecpRecoveryId, Signature as SecpSignature},
+    ecdsa::RecoverableSignature,
     Error as SecpError, PublicKey as SecpPublicKey,
 };
 use std::error::Error;
@@ -46,37 +46,6 @@ pub trait Signer: Send + Sync + std::fmt::Debug {
         let mut address = [0u8; 20];
         address.copy_from_slice(&hash[12..]);
         address
-    }
-}
-
-/// Represents a recoverable ECDSA signature, storing the core
-/// signature (R, S) and the calculated recovery ID (V).
-/// Can generate the 65-byte [R||S||V] format on demand.
-#[derive(Debug, Clone)]
-pub struct RecoverableSignature {
-    pub signature: SecpSignature,
-    pub recovery_id: SecpRecoveryId,
-}
-
-impl RecoverableSignature {
-    /// Returns the signature component (R, S).
-    pub fn signature(&self) -> &SecpSignature {
-        &self.signature
-    }
-
-    /// Returns the recovery ID component (V).
-    pub fn recovery_id(&self) -> SecpRecoveryId {
-        self.recovery_id
-    }
-
-    /// Generates the 65-byte [R||S||V] representation.
-    pub fn to_rsv_bytes(&self) -> [u8; 65] {
-        let sig_bytes = self.signature.serialize_compact(); // This is [R||S]
-        let mut result = [0u8; 65];
-        result[..64].copy_from_slice(&sig_bytes);
-        // TODO: segfault i32 to u8, fix
-        result[64] = self.recovery_id.to_i32() as u8;
-        result
     }
 }
 
