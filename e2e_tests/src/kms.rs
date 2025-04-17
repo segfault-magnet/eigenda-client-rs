@@ -16,10 +16,9 @@ use async_trait::async_trait;
 use k256::ecdsa::SigningKey;
 use k256::ecdsa::VerifyingKey;
 use k256::pkcs8::DecodePublicKey;
-use rust_eigenda_signers::{RecoverableSignature, Signer, SignerError};
+use rust_eigenda_signers::{LocalSigner, RecoverableSignature, Signer, SignerError};
 use secp256k1::{ecdsa as secp_ecdsa, Error, PublicKey, Secp256k1};
 use std::fmt;
-use tiny_keccak::{Hasher, Keccak};
 
 #[derive(Default)]
 pub struct Kms {
@@ -258,7 +257,6 @@ impl fmt::Debug for AwsKmsSigner {
             .field("public_key", &self.public_key)
             .field("k256_verifying_key", &self.k256_verifying_key)
             .field("client", &"aws_sdk_kms::Client { ... }") // Avoid printing potentially large client info
-            .field("secp", &"Secp256k1 { ... }")
             .finish()
     }
 }
@@ -307,7 +305,7 @@ impl Signer for AwsKmsSigner {
         .map_err(|e| SignerError::SignerImplementation(e.into()))?;
 
         // 5. Convert k256 signature to secp256k1 signature
-        let _secp_sig = secp_ecdsa::Signature::from_compact(&k256_sig_normalized.to_bytes())
+        let secp_sig = secp_ecdsa::Signature::from_compact(&k256_sig_normalized.to_bytes())
             // Now map back to Secp as types should align
             .map_err(|e: Error| SignerError::Secp(e))?;
 
@@ -325,7 +323,7 @@ impl Signer for AwsKmsSigner {
 
         // 9. Construct and return the RecoverableSignature struct
         Ok(RecoverableSignature {
-            signature: _secp_sig, // Note: _secp_sig might need renaming if we use it here
+            signature: secp_sig, // Use the renamed variable
             recovery_id: secp_recid,
         })
     }
@@ -368,15 +366,6 @@ fn determine_k256_recovery_id(
     anyhow::bail!("Could not recover correct public key from k256 signature")
 }
 
-// Restore local keccak256 helper function
-fn keccak256(input: &[u8]) -> [u8; 32] {
-    let mut hasher = Keccak::v256();
-    let mut output = [0u8; 32];
-    hasher.update(input);
-    hasher.finalize(&mut output);
-    output
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -387,20 +376,28 @@ mod tests {
 
     /// Helper function to set up KMS instance and generate keys
     /// Returns the KmsProcess, the original k256 key (for comparison), and the AwsKmsSigner
-    async fn setup_kms_and_signer() -> Result<(KmsProcess, K256SigningKey, AwsKmsSigner)>
-    {
+    async fn setup_kms_and_signer() -> Result<(KmsProcess, LocalSigner, AwsKmsSigner)> {
         let kms_proc = Kms::default().with_show_logs(false).start().await?;
-        let signing_key = K256SigningKey::random(&mut OsRng); // Use k256 for injection
+        
+        // Generate k256 secret key first
+        let k256_secret_key = k256::SecretKey::random(&mut OsRng);
+        let k256_signing_key = K256SigningKey::from(&k256_secret_key);
+        
+        // Create secp256k1 SecretKey from the same bytes for LocalSigner
+        let secp_secret_key = secp256k1::SecretKey::from_slice(&k256_secret_key.to_bytes())
+            .expect("Failed to create secp256k1 secret key from k256 bytes");
+        let local_signer = LocalSigner::new(secp_secret_key);
 
-        // Inject the key and get the KMS key ID (now returns String)
+        // Inject the k256 key and get the KMS key ID (now returns String)
         let kms_key_id = kms_proc
-            .inject_secp256k1_key(&signing_key) // Inject accepts k256::ecdsa::SigningKey
+            .inject_secp256k1_key(&k256_signing_key) // Inject accepts k256::ecdsa::SigningKey
             .await?;
 
         // Create the AwsKmsSigner instance using the key ID
         let aws_signer = kms_proc.get_signer(kms_key_id).await?;
 
-        Ok((kms_proc, signing_key, aws_signer))
+        // Return LocalSigner instead of K256SigningKey
+        Ok((kms_proc, local_signer, aws_signer))
     }
 
     /// Helper to verify a signature using secp256k1 public key recovery
@@ -446,35 +443,28 @@ mod tests {
 
     #[tokio::test]
     async fn test_kms_signer_public_key_and_address() -> Result<()> {
-        let (_kms_proc, k256_signing_key, aws_signer) = setup_kms_and_signer().await?;
+        // Get LocalSigner from setup
+        let (_kms_proc, local_signer, aws_signer) = setup_kms_and_signer().await?;
 
         // 1. Compare Public Keys
-        let k256_verifying_key = k256_signing_key.verifying_key();
-        let expected_secp_pubkey = PublicKey::from_slice(
-            // Use standard PublicKey type
-            k256_verifying_key.to_encoded_point(false).as_bytes(),
-        )
-        .unwrap();
+        // Get expected key directly from LocalSigner
+        let expected_secp_pubkey = local_signer.public_key();
 
         let actual_secp_pubkey = aws_signer.public_key();
         assert_eq!(
             actual_secp_pubkey, expected_secp_pubkey,
-            "Public key from AwsKmsSigner does not match the original injected key"
+            "Public key from AwsKmsSigner does not match the expected key from LocalSigner"
         );
 
         // 2. Compare Addresses
-        // Calculate expected address from the original k256 key
-        let encoded_point = k256_verifying_key.to_encoded_point(false);
-        let pk_bytes = encoded_point.as_bytes();
-        let hash = keccak256(&pk_bytes[1..]); // Exclude the 0x04 prefix
-        let mut expected_address = [0u8; 20];
-        expected_address.copy_from_slice(&hash[12..]);
+        // Get expected address directly from LocalSigner
+        let expected_address = local_signer.address();
 
         let actual_address = aws_signer.address(); // Uses trait default impl
 
         assert_eq!(
             actual_address, expected_address,
-            "Address from AwsKmsSigner does not match the calculated address"
+            "Address from AwsKmsSigner does not match the expected address from LocalSigner"
         );
 
         Ok(())
@@ -482,7 +472,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_kms_signer_sign_and_verify() -> Result<()> {
-        let (_kms_proc, _k256_signing_key, aws_signer) = setup_kms_and_signer().await?;
+        // Update setup function return type
+        let (_kms_proc, local_signer, aws_signer) = setup_kms_and_signer().await?;
         let test_message = b"Test message for KMS signer trait implementation";
         let message_hash_array: [u8; 32] = Sha256::digest(test_message).into();
 
@@ -496,8 +487,8 @@ mod tests {
         // Remove assertion on byte length
         // assert_eq!(signature_rsv.len(), 65, "Signature should be 65 bytes");
 
-        // Get the expected public key (as secp256k1::PublicKey)
-        let expected_pubkey = aws_signer.public_key(); // Already verified in another test
+        // Get the expected public key from LocalSigner
+        let expected_pubkey = local_signer.public_key(); // Already verified in another test
 
         // Verify the signature using public key recovery
         // Pass the RecoverableSignature struct
