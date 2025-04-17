@@ -11,3 +11,6 @@ license = "MIT OR Apache-2.0"
 secp256k1 = { workspace = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
+ethereum-types = { workspace = true }
+# TODO: segfault remove
+tiny-keccak = "2.0"

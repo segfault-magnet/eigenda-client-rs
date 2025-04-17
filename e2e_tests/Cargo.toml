@@ -30,3 +30,4 @@ async-trait = "0.1.74"
 base64 = "0.21.0"
 k256 = { version = "0.13", features = ["ecdsa"] }
 sha2 = "0.10"
+rust-eigenda-signers = { path = "../crates/rust-eigenda-signers" }

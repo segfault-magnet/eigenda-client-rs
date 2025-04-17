@@ -263,51 +263,42 @@ mod tests {
         signature::hazmat::PrehashVerifier, RecoveryId, Signature, VerifyingKey,
     };
     use rand::rngs::OsRng;
+    use rust_eigenda_signers::RecoverableSignature;
     use sha2::{Digest, Sha256};
 
     // --- Helper Functions & Types ---
 
-    /// Represents a recoverable ECDSA signature, storing the core
-    /// signature (R, S) and the calculated recovery ID (V).
-    /// Can generate the 65-byte [R||S||V] format on demand.
-    #[derive(Debug, Clone)]
-    struct RecoverableSignature {
-        signature: Signature,
-        recovery_id: RecoveryId,
+    /// Creates a recoverable signature from KMS DER bytes.
+    fn from_kms_der(
+        signature_der: &[u8],
+        message_hash: &[u8; 32],
+        verifying_key: &VerifyingKey,
+    ) -> Result<RecoverableSignature> {
+        let (signature, recovery_id) =
+            parse_der_and_determine_recid(signature_der, message_hash, verifying_key)
+                .context("Failed to parse DER and determine recovery ID")?;
+        Ok(RecoverableSignature {
+            signature,
+            recovery_id,
+        })
+    }
+
+    fn from_local_signature(
+        signature: &Signature,
+        message_hash: &[u8; 32],
+        verifying_key: &VerifyingKey,
+    ) -> Result<RecoverableSignature> {
+        let normalized_sig = signature.normalize_s().unwrap_or(*signature);
+        let recovery_id =
+            determine_recovery_id(&normalized_sig, message_hash, verifying_key)
+                .context("Failed to determine recovery ID for compact signature")?;
+        Ok(RecoverableSignature {
+            signature: normalized_sig,
+            recovery_id,
+        })
     }
 
     impl RecoverableSignature {
-        /// Creates a recoverable signature from KMS DER bytes.
-        fn from_kms_der(
-            signature_der: &[u8],
-            message_hash: &[u8; 32],
-            verifying_key: &VerifyingKey,
-        ) -> Result<Self> {
-            let (signature, recovery_id) =
-                parse_der_and_determine_recid(signature_der, message_hash, verifying_key)
-                    .context("Failed to parse DER and determine recovery ID")?;
-            Ok(Self {
-                signature,
-                recovery_id,
-            })
-        }
-
-        /// Creates a recoverable signature from a local k256::Signature.
-        fn from_local_signature(
-            signature: &Signature,
-            message_hash: &[u8; 32],
-            verifying_key: &VerifyingKey,
-        ) -> Result<Self> {
-            let normalized_sig = signature.normalize_s().unwrap_or(*signature);
-            let recovery_id =
-                determine_recovery_id(&normalized_sig, message_hash, verifying_key)
-                    .context("Failed to determine recovery ID for compact signature")?;
-            Ok(Self {
-                signature: normalized_sig,
-                recovery_id,
-            })
-        }
-
         /// Returns the signature component (R, S).
         fn signature(&self) -> &Signature {
             &self.signature
@@ -327,6 +318,8 @@ mod tests {
             result
         }
     }
+
+    impl RecoverableSignature {}
 
     /// Helper function to set up KMS instance and generate keys
     async fn setup_kms_and_keys() -> Result<(KmsProcess, SigningKey, VerifyingKey)> {
@@ -446,12 +439,9 @@ mod tests {
             .sign_prehash(&message_hash_array)
             .expect("Failed to sign prehashed message locally");
 
-        let processed_local_sig = RecoverableSignature::from_local_signature(
-            &local_signature,
-            &message_hash_array,
-            &verifying_key,
-        )
-        .context("Processing local signature failed")?;
+        let processed_local_sig =
+            from_local_signature(&local_signature, &message_hash_array, &verifying_key)
+                .context("Processing local signature failed")?;
 
         let bytes_rsv = processed_local_sig.to_rsv_bytes();
         assert_eq!(bytes_rsv.len(), 65);
@@ -475,7 +465,7 @@ mod tests {
 
         let kms_signature_der_bytes = kms_key.sign_digest(&message_hash_array).await?;
 
-        let processed_kms_sig = RecoverableSignature::from_kms_der(
+        let processed_kms_sig = from_kms_der(
             &kms_signature_der_bytes,
             &message_hash_array,
             &verifying_key,
