@@ -22,7 +22,7 @@ tokio = { version = "1.37", default-features = false, features = [
 anyhow = { version = "1.0", default-features = false, features = ["std"] }
 aws-config = { version = "1.5.5", features = ["rustls"] }
 aws-sdk-kms = { version = "1.36", features = ["rustls"] }
-secp256k1 = { version = "0.28.0", features = ["recovery", "rand-std"] }
+secp256k1 = { version = "0.27.0", features = ["recovery", "rand-std"] }
 rand = "0.8.5"
 hex = "0.4.3"
 tiny-keccak = { version = "2.0.2", features = ["keccak"] }
