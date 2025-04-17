@@ -242,6 +242,37 @@ pub struct AwsKmsSigner {
     k256_verifying_key: VerifyingKey, // Store k256 key for internal use
 }
 
+impl AwsKmsSigner {
+    pub async fn new(client: Client, key_id: String) -> anyhow::Result<Self> {
+        let public_key_der = client
+            .get_public_key()
+            .key_id(&key_id)
+            .send()
+            .await
+            .context("Failed to get public key")?
+            .public_key
+            .context("Public key missing from response")?
+            .into_inner();
+
+        // Parse the DER-encoded public key using k256
+        let k256_pub_key = VerifyingKey::from_public_key_der(&public_key_der)
+            .context("Failed to parse public key DER from KMS")?;
+
+        // Convert k256 public key to secp256k1 public key
+        let secp_pub_key =
+            PublicKey::from_slice(k256_pub_key.to_encoded_point(false).as_bytes())
+                .map_err(|e| SignerError::SignerSpecific(Box::new(e)))
+                .context("Failed to convert k256 pubkey to secp256k1 pubkey")?;
+
+        Ok(AwsKmsSigner {
+            key_id,
+            client,
+            public_key: secp_pub_key,
+            k256_verifying_key: k256_pub_key, // Store k256 key for internal use
+        })
+    }
+}
+
 // Implement Debug manually to avoid showing the client details fully
 impl fmt::Debug for AwsKmsSigner {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

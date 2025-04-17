@@ -8,6 +8,7 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
+rust-eigenda-client = { path = "../crates/rust-eigenda-client" } # Ensure aws-signer feature is enabled
 testcontainers = { version = "0.20", default-features = false, features = [
   "watchdog",
 ] }
@@ -18,6 +19,7 @@ tokio = { version = "1.37", default-features = false, features = [
   "process",
   "fs",
   "io-util",
+  "time",            # Added for sleep/timeout
 ] }
 anyhow = { version = "1.0", default-features = false, features = ["std"] }
 aws-config = { version = "1.5.5", features = ["rustls"] }
@@ -30,3 +32,15 @@ async-trait = "0.1.74"
 base64 = "0.21.0"
 k256 = { version = "0.13", features = ["ecdsa"] }
 sha2 = "0.10"
+
+# New dependencies for AWS signer test
+aws-sdk-secretsmanager = { version = "1.36", features = [
+  "rustls",
+] } # For AwsSigner
+url = "2.5.0" # For RPC URLs
+ethereum-types = "0.14.1" # For H160 address
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = [
+  "env-filter",
+  "fmt",
+] } # Added fmt feature
