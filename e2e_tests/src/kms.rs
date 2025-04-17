@@ -14,7 +14,7 @@ use tokio::io::AsyncBufReadExt;
 // Add necessary imports
 use async_trait::async_trait;
 use k256::ecdsa::VerifyingKey;
-use rust_eigenda_signers::{Signer, SignerError};
+use rust_eigenda_signers::{Signer, SignerError, RecoverableSignature};
 use secp256k1::{
     ecdsa as secp_ecdsa, Secp256k1, PublicKey, Error
 };
@@ -269,7 +269,7 @@ impl fmt::Debug for AwsKmsSigner {
 
 #[async_trait]
 impl Signer for AwsKmsSigner {
-    async fn sign_digest(&self, digest: [u8; 32]) -> Result<[u8; 65], SignerError> {
+    async fn sign_digest(&self, digest: [u8; 32]) -> Result<RecoverableSignature, SignerError> {
         // 1. Sign using KMS (returns DER signature)
         let sign_response = self
             .client
@@ -325,14 +325,18 @@ impl Signer for AwsKmsSigner {
             // Map local secp error to SignerImplementation, not Secp
             .map_err(|e: Error| SignerError::Secp(e))?;
 
-
         // 8. Serialize to [R||S||V] format (65 bytes)
-        let (recid_val, sig_compact) = recoverable_sig.serialize_compact();
-        let mut result = [0u8; 65];
-        result[..64].copy_from_slice(&sig_compact);
-        result[64] = recid_val.to_i32() as u8; // V is the recovery ID
+        // Remove serialization step
+        // let (recid_val, sig_compact) = recoverable_sig.serialize_compact();
+        // let mut result = [0u8; 65];
+        // result[..64].copy_from_slice(&sig_compact);
+        // result[64] = recid_val.to_i32() as u8; // V is the recovery ID
 
-        Ok(result)
+        // 9. Construct and return the RecoverableSignature struct
+        Ok(RecoverableSignature {
+            signature: _secp_sig, // Note: _secp_sig might need renaming if we use it here
+            recovery_id: secp_recid,
+        })
     }
 
     fn public_key(&self) -> PublicKey {
@@ -404,20 +408,30 @@ mod tests {
     }
 
     /// Helper to verify a signature using secp256k1 public key recovery
+    // Update to accept RecoverableSignature struct
     fn verify_signature_recovery(
-        signature_rsv: &[u8; 65],
+        rec_sig: &RecoverableSignature,
         message_hash: &[u8; 32],
         expected_pubkey: &PublicKey, // Use standard PublicKey type
     ) -> Result<()> {
-        let recid_val = signature_rsv[64];
-        let sig_compact = &signature_rsv[..64];
+        // Remove extraction from bytes
+        // let recid_val = signature_rsv[64];
+        // let sig_compact = &signature_rsv[..64];
+        //
+        // let recid = secp_ecdsa::RecoveryId::from_i32(recid_val as i32)
+        //     .context("Invalid recovery ID")?;
 
-        let recid = secp_ecdsa::RecoveryId::from_i32(recid_val as i32)
-            .context("Invalid recovery ID")?;
         let message = secp256k1::Message::from_slice(message_hash)
             .context("Invalid message hash")?;
-        let sig = secp_ecdsa::RecoverableSignature::from_compact(sig_compact, recid)
-            .context("Invalid compact signature format")?;
+
+        // Use the provided RecoverableSignature components directly
+        let sig = secp_ecdsa::RecoverableSignature::from_compact(
+            &rec_sig.signature().serialize_compact(), // Get R||S bytes
+            rec_sig.recovery_id(), // Get recovery ID
+        ).context("Failed to create secp256k1::RecoverableSignature from struct components")?;
+
+        // let sig = secp_ecdsa::RecoverableSignature::from_compact(sig_compact, recid)
+        //     .context("Invalid compact signature format")?;
 
         let secp = Secp256k1::new();
         let recovered_pk = secp
@@ -473,18 +487,21 @@ mod tests {
         let message_hash_array: [u8; 32] = Sha256::digest(test_message).into();
 
         // Sign using the AwsKmsSigner trait method
-        let signature_rsv = aws_signer
+        // Expect RecoverableSignature struct now
+        let rec_sig = aws_signer
             .sign_digest(message_hash_array)
             .await
             .context("Signing with AwsKmsSigner failed")?;
 
-        assert_eq!(signature_rsv.len(), 65, "Signature should be 65 bytes");
+        // Remove assertion on byte length
+        // assert_eq!(signature_rsv.len(), 65, "Signature should be 65 bytes");
 
         // Get the expected public key (as secp256k1::PublicKey)
         let expected_pubkey = aws_signer.public_key(); // Already verified in another test
 
         // Verify the signature using public key recovery
-        verify_signature_recovery(&signature_rsv, &message_hash_array, &expected_pubkey)
+        // Pass the RecoverableSignature struct
+        verify_signature_recovery(&rec_sig, &message_hash_array, &expected_pubkey)
             .context("Signature verification failed")?;
 
         Ok(())

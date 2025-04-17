@@ -27,7 +27,7 @@ pub trait Signer: Send + Sync + std::fmt::Debug {
     ///
     /// A `Result` containing the 65-byte recoverable signature `[R || S || V]` on success,
     /// or a `SignerError` on failure.
-    async fn sign_digest(&self, digest: [u8; 32]) -> Result<[u8; 65], SignerError>;
+    async fn sign_digest(&self, digest: [u8; 32]) -> Result<RecoverableSignature, SignerError>;
 
     /// Returns the public key associated with this signer.
     fn public_key(&self) -> PublicKey;
