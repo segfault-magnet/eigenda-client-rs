@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use secp256k1::{ecdsa::RecoverableSignature, Error as SecpError, Message, PublicKey};
+use secp256k1::{ecdsa::RecoverableSignature, Message, PublicKey};
 use std::error::Error;
 
 #[cfg(feature = "local-signer")]
@@ -10,8 +10,6 @@ pub use local::LocalSigner;
 /// Represents a potential error during the signing process.
 #[derive(Debug, thiserror::Error)]
 pub enum SignerError {
-    #[error("Secp256k1 library error")]
-    Secp(#[from] SecpError),
     #[error("Signer-specific implementation error")]
     SignerSpecific(#[source] Box<dyn Error + Send + Sync>),
 }

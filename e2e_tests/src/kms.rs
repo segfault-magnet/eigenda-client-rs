@@ -19,7 +19,7 @@ use k256::pkcs8::DecodePublicKey;
 use rust_eigenda_signers::{Signer, SignerError};
 use secp256k1::{
     ecdsa::{self as secp_ecdsa, RecoverableSignature},
-    Error, PublicKey,
+    PublicKey,
     Message
 };
 use std::fmt;
@@ -176,8 +176,8 @@ impl KmsProcess {
         let secp_pub_key = PublicKey::from_slice(
             k256_pub_key.to_encoded_point(false).as_bytes(), // Get uncompressed bytes
         )
-        // Map local secp error to SignerImplementation, not Secp
-        .map_err(SignerError::Secp)
+        // Map secp256k1 error to SignerSpecific
+        .map_err(|e| SignerError::SignerSpecific(Box::new(e)))
         .context("Failed to convert k256 pubkey to secp256k1 pubkey")?;
 
         Ok(AwsKmsSigner {
@@ -283,7 +283,7 @@ impl Signer for AwsKmsSigner {
             .message_type(aws_sdk_kms::types::MessageType::Digest)
             .signing_algorithm(aws_sdk_kms::types::SigningAlgorithmSpec::EcdsaSha256)
             .send()
-            .await
+            .await // Ensure .await is before map_err
             // Map SDK error to SignerSpecific
             .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
 
@@ -316,21 +316,21 @@ impl Signer for AwsKmsSigner {
 
         // 5. Convert k256 signature to secp256k1 signature
         let secp_sig = secp_ecdsa::Signature::from_compact(&k256_sig_normalized.to_bytes())
-            // Keep mapping to Secp error
-            .map_err(SignerError::Secp)?;
+            // Map secp256k1 error to SignerSpecific
+            .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
 
         // 6. Convert k256 recovery ID to secp256k1 recovery ID
         let secp_recid = secp_ecdsa::RecoveryId::from_i32(k256_recid.to_byte() as i32)
-            // Keep mapping to Secp error
-            .map_err(SignerError::Secp)?;
+            // Map secp256k1 error to SignerSpecific
+            .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
 
         // 9. Construct and return the standard secp256k1 RecoverableSignature struct
         let standard_recoverable_sig = RecoverableSignature::from_compact(
             secp_sig.serialize_compact().as_slice(), // Use signature bytes
             secp_recid,                              // Use recovery ID
         )
-        // Keep mapping to Secp error
-        .map_err(SignerError::Secp)?;
+        // Map secp256k1 error to SignerSpecific
+        .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
         
         Ok(standard_recoverable_sig)
     }
