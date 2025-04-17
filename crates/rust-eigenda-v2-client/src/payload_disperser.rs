@@ -1,3 +1,5 @@
+use rust_eigenda_signers::Signer;
+
 use crate::{
     cert_verifier::CertVerifier,
     core::{eigenda_cert::EigenDACert, BlobKey, Payload, PayloadForm},
@@ -15,19 +17,22 @@ pub struct PayloadDisperserConfig {
 }
 
 /// PayloadDisperser provides the ability to disperse payloads to EigenDA via a Disperser grpc service.
-pub struct PayloadDisperser {
+pub struct PayloadDisperser<S> {
     config: PayloadDisperserConfig,
-    disperser_client: DisperserClient,
+    disperser_client: DisperserClient<S>,
     cert_verifier: CertVerifier,
     required_quorums: Vec<u8>,
 }
 
-impl PayloadDisperser {
+impl<S> PayloadDisperser<S> {
     /// Creates a PayloadDisperser from the specified configs.
     pub async fn new(
-        disperser_config: DisperserClientConfig,
+        disperser_config: DisperserClientConfig<S>,
         payload_config: PayloadDisperserConfig,
-    ) -> Result<Self, PayloadDisperserError> {
+    ) -> Result<Self, PayloadDisperserError>
+    where
+        S: Signer,
+    {
         let disperser_client = DisperserClient::new(disperser_config).await?;
         let cert_verifier = CertVerifier::new(
             payload_config.cert_verifier_address.clone(),
@@ -46,7 +51,10 @@ impl PayloadDisperser {
     pub async fn send_payload(
         &mut self,
         payload: Payload,
-    ) -> Result<BlobKey, PayloadDisperserError> {
+    ) -> Result<BlobKey, PayloadDisperserError>
+    where
+        S: Signer,
+    {
         let blob = payload.to_blob(self.config.polynomial_form)?;
 
         let (blob_status, blob_key) = self
@@ -80,20 +88,29 @@ impl PayloadDisperser {
             .disperser_client
             .blob_status(blob_key)
             .await
-            .map_err(|e| EigenClientError::PayloadDisperser(PayloadDisperserError::Disperser(e)))?;
+            .map_err(|e| {
+                EigenClientError::PayloadDisperser(PayloadDisperserError::Disperser(e))
+            })?;
 
-        let blob_status = BlobStatus::try_from(status.status)
-            .map_err(|e| EigenClientError::PayloadDisperser(PayloadDisperserError::Decode(e)))?;
+        let blob_status = BlobStatus::try_from(status.status).map_err(|e| {
+            EigenClientError::PayloadDisperser(PayloadDisperserError::Decode(e))
+        })?;
         match blob_status {
-            BlobStatus::Unknown | BlobStatus::Failed => Err(PayloadDisperserError::BlobStatus)?,
-            BlobStatus::Encoded | BlobStatus::GatheringSignatures | BlobStatus::Queued => Ok(None),
+            BlobStatus::Unknown | BlobStatus::Failed => {
+                Err(PayloadDisperserError::BlobStatus)?
+            }
+            BlobStatus::Encoded
+            | BlobStatus::GatheringSignatures
+            | BlobStatus::Queued => Ok(None),
             BlobStatus::Complete => {
                 let eigenda_cert = self.build_eigenda_cert(&status).await?;
                 self.cert_verifier
                     .verify_cert_v2(&eigenda_cert)
                     .await
                     .map_err(|e| {
-                        EigenClientError::PayloadDisperser(PayloadDisperserError::CertVerifier(e))
+                        EigenClientError::PayloadDisperser(
+                            PayloadDisperserError::CertVerifier(e),
+                        )
                     })?;
                 Ok(Some(eigenda_cert))
             }
@@ -138,6 +155,7 @@ mod tests {
     };
 
     use dotenv::dotenv;
+    use rust_eigenda_signers::PrivateKeySigner;
     use std::env;
 
     #[ignore = "depends on external RPC"]
@@ -151,22 +169,26 @@ mod tests {
         let private_key: String =
             env::var("SIGNER_PRIVATE_KEY").expect("SIGNER_PRIVATE_KEY must be set");
 
+        let signer = PrivateKeySigner::new(private_key.parse().unwrap());
+
         let disperser_config = DisperserClientConfig {
             disperser_rpc: "https://disperser-testnet-holesky.eigenda.xyz".to_string(),
-            private_key,
+            signer,
             use_secure_grpc_flag: false,
         };
 
         let payload_config = PayloadDisperserConfig {
             polynomial_form: PayloadForm::Coeff,
             blob_version: 0,
-            cert_verifier_address: "0xFe52fE1940858DCb6e12153E2104aD0fDFbE1162".to_string(),
+            cert_verifier_address: "0xFe52fE1940858DCb6e12153E2104aD0fDFbE1162"
+                .to_string(),
             eth_rpc_url: "https://ethereum-holesky-rpc.publicnode.com".to_string(),
         };
 
-        let mut payload_disperser = PayloadDisperser::new(disperser_config, payload_config)
-            .await
-            .unwrap();
+        let mut payload_disperser =
+            PayloadDisperser::new(disperser_config, payload_config)
+                .await
+                .unwrap();
 
         let payload = Payload::new(vec![1, 2, 3, 4, 5]);
         let blob_key = payload_disperser.send_payload(payload).await.unwrap();

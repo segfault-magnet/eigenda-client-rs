@@ -8,9 +8,7 @@ mod payment;
 
 pub use blob::Blob;
 pub use blob_key::BlobKey;
-pub use blob_request_signer::{
-    BlobRequestSigner, LocalBlobRequestSigner, PaymentStateRequest,
-};
+pub use blob_request_signer::PaymentStateRequest;
 pub use encoded_payload::EncodedPayload;
 pub use payload::Payload;
 pub use payment::{OnDemandPayment, PaymentMetadata, ReservedPayment};

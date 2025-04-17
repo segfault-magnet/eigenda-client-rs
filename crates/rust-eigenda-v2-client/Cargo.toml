@@ -16,7 +16,7 @@ exclude = [
 
 [dependencies]
 # TODO: segfault remove the feature
-rust-eigenda-signers = { workspace = true, features = ["private-key-signer"] }
+rust-eigenda-signers = { workspace = true }
 rand = { workspace = true }
 bytes = { workspace = true }
 reqwest = { workspace = true }
@@ -53,5 +53,6 @@ alloy-contract = { workspace = true }
 alloy = { workspace = true }
 
 [dev-dependencies]
+rust-eigenda-signers = { workspace = true, features = ["private-key-signer"] }
 dotenv = { workspace = true }
 serial_test = { workspace = true }

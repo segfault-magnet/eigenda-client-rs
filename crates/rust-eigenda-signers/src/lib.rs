@@ -3,7 +3,6 @@ use async_trait::async_trait;
 pub use secp256k1::ecdsa;
 pub use secp256k1::ecdsa::RecoverableSignature;
 pub use secp256k1::{Error as SecpError, Message, PublicKey};
-use tiny_keccak::Hasher; // Re-exports RecoverableSignature, Signature, etc.
 
 // Restore necessary internal import for the trait signature
 use std::error::Error;
@@ -56,6 +55,7 @@ pub trait Signer: Send + Sync + std::fmt::Debug {
     /// Returns the public key associated with this signer.
     fn public_key(&self) -> PublicKey;
 
+    /// TODO: segfault maybe H160
     /// Returns the Ethereum address associated with this signer.
     fn address(&self) -> [u8; 20] {
         let public_key = self.public_key().serialize_uncompressed();

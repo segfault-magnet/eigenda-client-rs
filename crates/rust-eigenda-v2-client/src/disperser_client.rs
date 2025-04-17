@@ -2,15 +2,12 @@ use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use hex::ToHex;
-use rust_eigenda_signers::Encode;
+use rust_eigenda_signers::{Encode, Signer};
 use tonic::transport::{Channel, ClientTlsConfig};
 
 use crate::accountant::Accountant;
 use crate::core::eigenda_cert::{BlobCommitments, BlobHeader, PaymentHeader};
-use crate::core::{
-    BlobKey, BlobRequestSigner, LocalBlobRequestSigner, OnDemandPayment,
-    PaymentStateRequest, ReservedPayment,
-};
+use crate::core::{BlobKey, OnDemandPayment, PaymentStateRequest, ReservedPayment};
 use crate::errors::DisperseError;
 use crate::generated::common::v2::{
     BlobHeader as BlobHeaderProto, PaymentHeader as PaymentHeaderProto,
@@ -24,16 +21,16 @@ use crate::generated::disperser::v2::{
 const BYTES_PER_SYMBOL: usize = 32;
 
 #[derive(Debug)]
-pub struct DisperserClientConfig {
+pub struct DisperserClientConfig<S> {
     pub disperser_rpc: String,
-    pub private_key: String,
+    pub signer: S,
     pub use_secure_grpc_flag: bool,
 }
 
-impl DisperserClientConfig {
+impl<S> DisperserClientConfig<S> {
     pub fn new(
         disperser_rpc: String,
-        private_key: String,
+        signer: S,
         use_secure_grpc_flag: bool,
     ) -> Result<Self, DisperseError> {
         if disperser_rpc.is_empty() {
@@ -41,29 +38,27 @@ impl DisperserClientConfig {
                 "disperser_rpc cannot be empty".to_string(),
             ));
         }
-        if private_key.is_empty() {
-            return Err(DisperseError::ConfigInitialization(
-                "private_key cannot be empty".to_string(),
-            ));
-        }
 
         Ok(Self {
             disperser_rpc,
-            private_key,
+            signer,
             use_secure_grpc_flag,
         })
     }
 }
 
-pub struct DisperserClient {
-    signer: LocalBlobRequestSigner,
+pub struct DisperserClient<S> {
+    signer: S,
     rpc_client: disperser_client::DisperserClient<tonic::transport::Channel>,
     accountant: Accountant,
 }
 
 // todo: add locks
-impl DisperserClient {
-    pub async fn new(config: DisperserClientConfig) -> Result<Self, DisperseError> {
+impl<S> DisperserClient<S> {
+    pub async fn new(config: DisperserClientConfig<S>) -> Result<Self, DisperseError>
+    where
+        S: Signer,
+    {
         let mut endpoint = Channel::from_shared(config.disperser_rpc.clone())
             .map_err(|_| DisperseError::InvalidURI(config.disperser_rpc.clone()))?;
         if config.use_secure_grpc_flag {
@@ -72,9 +67,9 @@ impl DisperserClient {
         }
         let channel = endpoint.connect().await?;
         let rpc_client = disperser_client::DisperserClient::new(channel);
-        let signer = LocalBlobRequestSigner::new(&config.private_key)?;
+        let signer = config.signer;
         let accountant = Accountant::new(
-            signer.account_id(),
+            signer.address().into(),
             ReservedPayment::default(),
             OnDemandPayment::default(),
             0,
@@ -96,7 +91,10 @@ impl DisperserClient {
         data: &[u8],
         blob_version: u16,
         quorums: &[u8],
-    ) -> Result<(BlobStatus, BlobKey), DisperseError> {
+    ) -> Result<(BlobStatus, BlobKey), DisperseError>
+    where
+        S: Signer,
+    {
         if quorums.is_empty() {
             return Err(DisperseError::EmptyQuorums);
         }
@@ -143,7 +141,7 @@ impl DisperserClient {
 
         let signature = self
             .signer
-            .sign(blob_header.blob_key()?)
+            .sign_digest(&blob_header.blob_key()?.into())
             .await?
             .encode()
             .to_vec();
@@ -177,7 +175,10 @@ impl DisperserClient {
     }
 
     /// Populates the accountant with the payment state from the disperser.
-    async fn populate_accountant(&mut self) -> Result<(), DisperseError> {
+    async fn populate_accountant(&mut self) -> Result<(), DisperseError>
+    where
+        S: Signer,
+    {
         let payment_state = self.payment_state().await?;
         self.accountant
             .set_payment_state(&payment_state)
@@ -202,17 +203,15 @@ impl DisperserClient {
     }
 
     /// Returns the payment state of the disperser client
-    pub async fn payment_state(&mut self) -> Result<GetPaymentStateReply, DisperseError> {
-        let account_id = self.signer.account_id().encode_hex();
+    pub async fn payment_state(&mut self) -> Result<GetPaymentStateReply, DisperseError>
+    where
+        S: Signer,
+    {
+        let account_id = (ethereum_types::H160::from(self.signer.address())).encode_hex();
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-        let signature = self
-            .signer
-            .sign_payment_state_request(PaymentStateRequest {
-                timestamp: timestamp as u64,
-            })
-            .await?
-            .encode()
-            .to_vec();
+        let digest = PaymentStateRequest::new(timestamp as u64)
+            .prepare_for_signing_by(&self.signer.address().into());
+        let signature = self.signer.sign_digest(&digest).await?.encode().to_vec();
         let request = GetPaymentStateRequest {
             account_id,
             signature,
@@ -250,6 +249,7 @@ mod tests {
     use super::DisperserClientConfig;
 
     use dotenv::dotenv;
+    use rust_eigenda_signers::PrivateKeySigner;
     use serial_test::serial;
     use std::env;
 
@@ -263,9 +263,11 @@ mod tests {
         let private_key: String =
             env::var("SIGNER_PRIVATE_KEY").expect("SIGNER_PRIVATE_KEY must be set");
 
+        let signer = PrivateKeySigner::new(private_key.parse().unwrap());
+
         let config = DisperserClientConfig {
             disperser_rpc: "https://disperser-testnet-holesky.eigenda.xyz".to_string(),
-            private_key,
+            signer,
             use_secure_grpc_flag: false,
         };
         let mut client = DisperserClient::new(config).await.unwrap();
@@ -287,9 +289,11 @@ mod tests {
         let private_key: String =
             env::var("SIGNER_PRIVATE_KEY").expect("SIGNER_PRIVATE_KEY must be set");
 
+        let signer = PrivateKeySigner::new(private_key.parse().unwrap());
+
         let config = DisperserClientConfig {
             disperser_rpc: "https://disperser-preprod-holesky.eigenda.xyz".to_string(),
-            private_key,
+            signer,
             use_secure_grpc_flag: true,
         };
         let mut client = DisperserClient::new(config).await.unwrap();
@@ -310,9 +314,10 @@ mod tests {
         let private_key: String =
             env::var("SIGNER_PRIVATE_KEY").expect("SIGNER_PRIVATE_KEY must be set");
 
+        let signer = PrivateKeySigner::new(private_key.parse().unwrap());
         let config = DisperserClientConfig {
             disperser_rpc: "https://disperser-preprod-holesky.eigenda.xyz".to_string(),
-            private_key,
+            signer,
             use_secure_grpc_flag: true,
         };
         let mut client = DisperserClient::new(config).await.unwrap();
