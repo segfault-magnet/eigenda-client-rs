@@ -33,11 +33,10 @@ impl LocalSigner {
 impl Signer for LocalSigner {
     async fn sign_digest(
         &self,
-        digest: [u8; 32],
+        message: &Message,
     ) -> Result<RecoverableSignature, SignerError> {
-        Message::from_slice(digest.as_slice())
-            .map(|msg| self.secp.sign_ecdsa_recoverable(&msg, &self.secret_key))
-            .map_err(SignerError::Secp)
+        let sig = self.secp.sign_ecdsa_recoverable(message, &self.secret_key);
+        Ok(sig)
     }
 
     fn public_key(&self) -> PublicKey {
@@ -61,24 +60,12 @@ mod tests {
 
         let message_bytes = b"Test message for local signer";
         let digest: [u8; 32] = Sha256::digest(message_bytes).into();
+        let message = Message::from_slice(&digest).expect("Failed to create Message from digest");
 
-        // sign_digest now returns secp256k1::ecdsa::RecoverableSignature
-        let recoverable_sig: SecpRecoverableSignature =
-            signer.sign_digest(digest).await.expect("Signing failed");
+        let recoverable_sig: SecpRecoverableSignature = signer.sign_digest(&message).await.expect("Signing failed");
 
-        // Verify the signature recovers the correct public key
         let secp = Secp256k1::new();
-        let message = Message::from_slice(&digest).unwrap();
-
-        // No need to reconstruct, verify directly
-        // let sig_bytes = recoverable_sig.signature.serialize_compact();
-        // let recovery_id = recoverable_sig.recovery_id;
-        // let internal_rec_sig = secp256k1::ecdsa::RecoverableSignature::from_compact(&sig_bytes, recovery_id)
-        //                         .expect("Failed to reconstruct internal recoverable signature");
-
-        let recovered_pk = secp
-            .recover_ecdsa(&message, &recoverable_sig)
-            .expect("Recovery failed");
+        let recovered_pk = secp.recover_ecdsa(&message, &recoverable_sig).expect("Recovery failed");
 
         assert_eq!(recovered_pk, public_key, "Recovered public key mismatch");
     }

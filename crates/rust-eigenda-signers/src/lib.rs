@@ -1,7 +1,5 @@
 use async_trait::async_trait;
-use secp256k1::{
-    ecdsa::RecoverableSignature, Error as SecpError, PublicKey as SecpPublicKey,
-};
+use secp256k1::{ecdsa::RecoverableSignature, Error as SecpError, Message, PublicKey};
 use std::error::Error;
 
 #[cfg(feature = "local-signer")]
@@ -12,10 +10,10 @@ pub use local::LocalSigner;
 /// Represents a potential error during the signing process.
 #[derive(Debug, thiserror::Error)]
 pub enum SignerError {
-    #[error("Secp256k1 error")]
-    Secp(#[source] SecpError),
-    #[error("Underlying signer error")]
-    SignerImplementation(#[source] Box<dyn Error + Send + Sync>),
+    #[error("Secp256k1 library error")]
+    Secp(#[from] SecpError),
+    #[error("Signer-specific implementation error")]
+    SignerSpecific(#[source] Box<dyn Error + Send + Sync>),
 }
 
 /// A trait for signing messages using different key management strategies.
@@ -33,11 +31,11 @@ pub trait Signer: Send + Sync + std::fmt::Debug {
     /// or a `SignerError` on failure.
     async fn sign_digest(
         &self,
-        digest: [u8; 32],
+        message: &Message,
     ) -> Result<RecoverableSignature, SignerError>;
 
     /// Returns the public key associated with this signer.
-    fn public_key(&self) -> SecpPublicKey;
+    fn public_key(&self) -> PublicKey;
 
     /// Returns the Ethereum address associated with this signer.
     fn address(&self) -> [u8; 20] {

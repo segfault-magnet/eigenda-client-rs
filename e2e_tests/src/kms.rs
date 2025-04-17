@@ -20,6 +20,7 @@ use rust_eigenda_signers::{Signer, SignerError};
 use secp256k1::{
     ecdsa::{self as secp_ecdsa, RecoverableSignature},
     Error, PublicKey,
+    Message
 };
 use std::fmt;
 
@@ -268,33 +269,38 @@ impl fmt::Debug for AwsKmsSigner {
 impl Signer for AwsKmsSigner {
     async fn sign_digest(
         &self,
-        digest: [u8; 32],
+        message: &Message,
     ) -> Result<RecoverableSignature, SignerError> {
+        // Get bytes from message for KMS call
+        let digest_bytes: &[u8; 32] = message.as_ref();
+
         // 1. Sign using KMS (returns DER signature)
         let sign_response = self
             .client
             .sign()
             .key_id(&self.key_id)
-            .message(Blob::new(digest))
+            .message(Blob::new(digest_bytes))
             .message_type(aws_sdk_kms::types::MessageType::Digest)
             .signing_algorithm(aws_sdk_kms::types::SigningAlgorithmSpec::EcdsaSha256)
             .send()
             .await
-            .map_err(|e| SignerError::SignerImplementation(Box::new(e)))?; // Map SDK error
+            // Map SDK error to SignerSpecific
+            .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
 
         let signature_der = sign_response
             .signature
             .ok_or_else(|| {
-                SignerError::SignerImplementation(
+                // Map missing signature error to SignerSpecific
+                SignerError::SignerSpecific(
                     anyhow::anyhow!("Signature missing from KMS response").into(),
                 )
             })?
             .into_inner();
 
         // 2. Parse DER signature using k256
-        let k256_sig = k256::ecdsa::Signature::from_der(&signature_der).map_err(|e| {
-            SignerError::SignerImplementation(Box::new(e)) // Map k256 error
-        })?;
+        let k256_sig = k256::ecdsa::Signature::from_der(&signature_der)
+             // Map k256 DER parsing error to SignerSpecific
+            .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
 
         // 3. Normalize the k256 signature (low-S)
         let k256_sig_normalized = k256_sig.normalize_s().unwrap_or(k256_sig);
@@ -302,28 +308,30 @@ impl Signer for AwsKmsSigner {
         // 4. Determine k256 Recovery ID
         let k256_recid = determine_k256_recovery_id(
             &k256_sig_normalized,
-            &digest,
-            &self.k256_verifying_key, // Use stored k256 verifying key
+            digest_bytes,
+            &self.k256_verifying_key,
         )
-        .map_err(|e| SignerError::SignerImplementation(e.into()))?;
+        // Map recovery ID determination error (anyhow) to SignerSpecific
+        .map_err(|e| SignerError::SignerSpecific(e.into()))?;
 
         // 5. Convert k256 signature to secp256k1 signature
         let secp_sig = secp_ecdsa::Signature::from_compact(&k256_sig_normalized.to_bytes())
-            // Now map back to Secp as types should align
-            .map_err(|e: Error| SignerError::Secp(e))?;
+            // Keep mapping to Secp error
+            .map_err(SignerError::Secp)?;
 
         // 6. Convert k256 recovery ID to secp256k1 recovery ID
         let secp_recid = secp_ecdsa::RecoveryId::from_i32(k256_recid.to_byte() as i32)
-            // Map local secp error to SignerImplementation, not Secp
-            .map_err(|e: Error| SignerError::Secp(e))?;
+            // Keep mapping to Secp error
+            .map_err(SignerError::Secp)?;
 
         // 9. Construct and return the standard secp256k1 RecoverableSignature struct
         let standard_recoverable_sig = RecoverableSignature::from_compact(
             secp_sig.serialize_compact().as_slice(), // Use signature bytes
             secp_recid,                              // Use recovery ID
         )
-        .map_err(SignerError::Secp)?; // Map potential error
-
+        // Keep mapping to Secp error
+        .map_err(SignerError::Secp)?;
+        
         Ok(standard_recoverable_sig)
     }
 
@@ -372,7 +380,7 @@ mod tests {
     use k256::ecdsa::SigningKey as K256SigningKey;
     use rand::rngs::OsRng;
     use rust_eigenda_signers::LocalSigner;
-    use secp256k1::{ecdsa::RecoverableSignature as SecpRecoverableSignature, Secp256k1};
+    use secp256k1::{ecdsa::RecoverableSignature as SecpRecoverableSignature, Secp256k1, Message as SecpMessage};
     use sha2::{Digest, Sha256};
 
     /// Helper function to set up KMS instance and generate keys
@@ -406,15 +414,12 @@ mod tests {
     // Update to accept standard secp256k1::ecdsa::RecoverableSignature
     fn verify_signature_recovery(
         rec_sig: &SecpRecoverableSignature, // Use standard type
-        message_hash: &[u8; 32],
+        message: &SecpMessage, // Accept Message type
         expected_pubkey: &PublicKey, // Use standard PublicKey type
     ) -> Result<()> {
-        let message = secp256k1::Message::from_slice(message_hash)
-            .context("Invalid message hash")?;
-
         let secp = Secp256k1::new();
         let recovered_pk = secp
-            .recover_ecdsa(&message, rec_sig) // Pass rec_sig directly
+            .recover_ecdsa(message, rec_sig) // Pass message directly
             .context("Failed to recover public key")?;
 
         if &recovered_pk == expected_pubkey {
@@ -457,13 +462,16 @@ mod tests {
     async fn test_kms_signer_sign_and_verify() -> Result<()> {
         // Update setup function return type
         let (_kms_proc, local_signer, aws_signer) = setup_kms_and_signer().await?;
-        let test_message = b"Test message for KMS signer trait implementation";
-        let message_hash_array: [u8; 32] = Sha256::digest(test_message).into();
+        let test_message_bytes = b"Test message for KMS signer trait implementation";
+        let message_hash_array: [u8; 32] = Sha256::digest(test_message_bytes).into();
+        // Create Message before calling sign_digest
+        let message = SecpMessage::from_slice(&message_hash_array)
+            .expect("Failed to create Message from digest");
 
         // Sign using the AwsKmsSigner trait method
         // Expect standard secp256k1::ecdsa::RecoverableSignature struct now
         let rec_sig: SecpRecoverableSignature = aws_signer
-            .sign_digest(message_hash_array)
+            .sign_digest(&message) // Pass the Message
             .await
             .context("Signing with AwsKmsSigner failed")?;
 
@@ -471,8 +479,8 @@ mod tests {
         let expected_pubkey = local_signer.public_key(); // Already verified in another test
 
         // Verify the signature using public key recovery
-        // Pass the standard secp256k1::ecdsa::RecoverableSignature struct
-        verify_signature_recovery(&rec_sig, &message_hash_array, &expected_pubkey)
+        // Pass the standard secp256k1::ecdsa::RecoverableSignature struct and Message
+        verify_signature_recovery(&rec_sig, &message, &expected_pubkey)
             .context("Signature verification failed")?;
 
         Ok(())
