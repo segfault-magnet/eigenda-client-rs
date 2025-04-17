@@ -8,7 +8,8 @@ use crate::{
     blob_info,
     client::BlobProvider,
     errors::{
-        BlobStatusError, CommunicationError, ConfigError, EigenClientError, VerificationError,
+        BlobStatusError, CommunicationError, ConfigError, EigenClientError,
+        VerificationError,
     },
     generated::disperser::{
         self,
@@ -18,7 +19,7 @@ use crate::{
     },
 };
 use byteorder::{BigEndian, ByteOrder};
-use secp256k1::{ecdsa::RecoverableSignature, SecretKey};
+use rust_eigenda_signers::{Message, PublicKey, Signer};
 use tiny_keccak::{Hasher, Keccak};
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
@@ -29,9 +30,9 @@ use tonic::{
 
 /// Raw Client that comunicates with the disperser
 #[derive(Debug)]
-pub(crate) struct RawEigenClient {
+pub(crate) struct RawEigenClient<S> {
     client: Arc<Mutex<DisperserClient<Channel>>>,
-    private_key: SecretKey,
+    signer: S,
     pub config: EigenConfig,
     verifier: Verifier<eth_client::EthClient>,
     blob_provider: Arc<dyn BlobProvider>,
@@ -39,11 +40,11 @@ pub(crate) struct RawEigenClient {
 
 pub(crate) const FIELD_ELEMENT_SIZE_BYTES: usize = 32;
 
-impl RawEigenClient {
+impl<S> RawEigenClient<S> {
     const BLOB_SIZE_LIMIT: usize = 1024 * 1024 * 16; // 16 MB
     /// Creates a new RawEigenClient
     pub(crate) async fn new(
-        private_key: SecretKey,
+        signer: S,
         config: EigenConfig,
         blob_provider: Arc<dyn BlobProvider>,
     ) -> Result<Self, EigenClientError> {
@@ -58,12 +59,13 @@ impl RawEigenClient {
         ));
 
         let url = config.eth_rpc_url.clone();
-        let eth_client = eth_client::EthClient::new(url, config.eigenda_svc_manager_address);
+        let eth_client =
+            eth_client::EthClient::new(url, config.eigenda_svc_manager_address);
 
         let verifier = Verifier::new(config.clone(), eth_client).await?;
         Ok(RawEigenClient {
             client,
-            private_key,
+            signer,
             config,
             verifier,
             blob_provider,
@@ -108,17 +110,27 @@ impl RawEigenClient {
         {
             disperser::BlobStatus::Failed
             | disperser::BlobStatus::InsufficientSignatures
-            | disperser::BlobStatus::Unknown => Err(BlobStatusError::BlobDispatchedFailed)?,
+            | disperser::BlobStatus::Unknown => {
+                Err(BlobStatusError::BlobDispatchedFailed)?
+            }
 
             disperser::BlobStatus::Dispersing
             | disperser::BlobStatus::Processing
             | disperser::BlobStatus::Finalized
-            | disperser::BlobStatus::Confirmed => Ok(hex::encode(disperse_reply.request_id)),
+            | disperser::BlobStatus::Confirmed => {
+                Ok(hex::encode(disperse_reply.request_id))
+            }
         }
     }
 
     /// Dispatches a blob to the disperser with authentication
-    async fn dispatch_blob_authenticated(&self, data: Vec<u8>) -> Result<String, EigenClientError> {
+    async fn dispatch_blob_authenticated(
+        &self,
+        data: Vec<u8>,
+    ) -> Result<String, EigenClientError>
+    where
+        S: Signer,
+    {
         let (tx, rx) = mpsc::unbounded_channel();
 
         // 1. send DisperseBlobRequest
@@ -140,7 +152,8 @@ impl RawEigenClient {
         let blob_auth_header = self.receive_blob_auth_header(response_stream).await?;
 
         // 3. sign and send BlobAuthHeader
-        self.submit_authentication_data(blob_auth_header.clone(), &tx)?;
+        self.submit_authentication_data(blob_auth_header.clone(), &tx)
+            .await?;
 
         // 4. receive DisperseBlobReply
         let reply = response_stream
@@ -151,7 +164,9 @@ impl RawEigenClient {
             .payload
             .ok_or(CommunicationError::NoPayloadInResponse)?;
 
-        let disperser::authenticated_reply::Payload::DisperseReply(disperse_reply) = reply else {
+        let disperser::authenticated_reply::Payload::DisperseReply(disperse_reply) =
+            reply
+        else {
             return Err(CommunicationError::ErrorFromServer(
                 "Unexpected response".to_string(),
             ))?;
@@ -162,12 +177,16 @@ impl RawEigenClient {
         {
             disperser::BlobStatus::Failed
             | disperser::BlobStatus::InsufficientSignatures
-            | disperser::BlobStatus::Unknown => Err(BlobStatusError::BlobDispatchedFailed)?,
+            | disperser::BlobStatus::Unknown => {
+                Err(BlobStatusError::BlobDispatchedFailed)?
+            }
 
             disperser::BlobStatus::Dispersing
             | disperser::BlobStatus::Processing
             | disperser::BlobStatus::Finalized
-            | disperser::BlobStatus::Confirmed => Ok(hex::encode(disperse_reply.request_id)),
+            | disperser::BlobStatus::Confirmed => {
+                Ok(hex::encode(disperse_reply.request_id))
+            }
         }
     }
 
@@ -237,7 +256,13 @@ impl RawEigenClient {
     }
 
     /// Dispatches a blob to the disperser
-    pub(crate) async fn dispatch_blob(&self, data: Vec<u8>) -> Result<String, EigenClientError> {
+    pub(crate) async fn dispatch_blob(
+        &self,
+        data: Vec<u8>,
+    ) -> Result<String, EigenClientError>
+    where
+        S: Signer,
+    {
         if self.config.authenticated {
             self.dispatch_blob_authenticated(data).await
         } else {
@@ -249,7 +274,10 @@ impl RawEigenClient {
         &self,
         data: Vec<u8>,
         tx: &mpsc::UnboundedSender<disperser::AuthenticatedRequest>,
-    ) -> Result<(), EigenClientError> {
+    ) -> Result<(), EigenClientError>
+    where
+        S: Signer,
+    {
         let custom_quorum_numbers: Vec<u32> = self
             .config
             .custom_quorum_numbers
@@ -260,7 +288,7 @@ impl RawEigenClient {
             payload: Some(DisperseRequest(disperser::DisperseBlobRequest {
                 data,
                 custom_quorum_numbers,
-                account_id: get_account_id(&self.private_key),
+                account_id: get_account_id(&self.signer.public_key()),
             })),
         };
 
@@ -276,20 +304,23 @@ impl RawEigenClient {
         output
     }
 
-    fn submit_authentication_data(
+    async fn submit_authentication_data(
         &self,
         blob_auth_header: BlobAuthHeader,
         tx: &mpsc::UnboundedSender<disperser::AuthenticatedRequest>,
-    ) -> Result<(), EigenClientError> {
+    ) -> Result<(), EigenClientError>
+    where
+        S: Signer,
+    {
         // TODO: replace challenge_parameter with actual auth header when it is available
         let mut buf = [0u8; 4];
         BigEndian::write_u32(&mut buf, blob_auth_header.challenge_parameter);
         let digest = self.keccak256(&buf);
-        let signature: RecoverableSignature = secp256k1::Secp256k1::signing_only()
-            .sign_ecdsa_recoverable(
-                &secp256k1::Message::from_slice(&digest[..]).map_err(CommunicationError::Secp)?,
-                &self.private_key,
-            );
+
+        let msg = Message::from_slice(&digest).expect("digest to be 32 bytes");
+        let signature = self.signer.sign_digest(&msg).await.map_err(|e| {
+            EigenClientError::Communication(CommunicationError::Signing(e))
+        })?;
         let (recovery_id, sig) = signature.serialize_compact();
 
         let mut signature = Vec::with_capacity(65);
@@ -324,7 +355,9 @@ impl RawEigenClient {
             .payload
             .ok_or(CommunicationError::NoPayloadInResponse)?;
 
-        if let disperser::authenticated_reply::Payload::BlobAuthHeader(blob_auth_header) = reply {
+        if let disperser::authenticated_reply::Payload::BlobAuthHeader(blob_auth_header) =
+            reply
+        {
             Ok(blob_auth_header)
         } else {
             Err(CommunicationError::ErrorFromServer(
@@ -350,8 +383,12 @@ impl RawEigenClient {
             .map_err(BlobStatusError::Status)?
             .into_inner();
 
-        match disperser::BlobStatus::try_from(resp.status).map_err(BlobStatusError::Prost)? {
-            disperser::BlobStatus::Processing | disperser::BlobStatus::Dispersing => Ok(None),
+        match disperser::BlobStatus::try_from(resp.status)
+            .map_err(BlobStatusError::Prost)?
+        {
+            disperser::BlobStatus::Processing | disperser::BlobStatus::Dispersing => {
+                Ok(None)
+            }
             disperser::BlobStatus::Failed => Err(BlobStatusError::BlobDispatchedFailed)?,
             disperser::BlobStatus::InsufficientSignatures => {
                 Err(BlobStatusError::InsufficientSignatures)?
@@ -403,9 +440,7 @@ impl RawEigenClient {
     }
 }
 
-fn get_account_id(secret_key: &SecretKey) -> String {
-    let public_key =
-        secp256k1::PublicKey::from_secret_key(&secp256k1::Secp256k1::new(), secret_key);
+fn get_account_id(public_key: &PublicKey) -> String {
     let hex = hex::encode(public_key.serialize_uncompressed());
 
     format!("0x{}", hex)

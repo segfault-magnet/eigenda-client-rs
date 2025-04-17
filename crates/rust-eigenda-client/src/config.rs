@@ -90,12 +90,6 @@ impl EigenConfig {
     }
 }
 
-/// Contains the private key
-#[derive(Clone, Debug, PartialEq)]
-pub struct EigenSecrets {
-    pub private_key: PrivateKey,
-}
-
 /// Secretly enclosed Private Key
 #[derive(Debug, Clone)]
 pub struct PrivateKey(pub Secret<String>);

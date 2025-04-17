@@ -4,20 +4,21 @@
 /// `cargo test client_tests -- --ignored`
 #[cfg(test)]
 mod tests {
-    use std::{str::FromStr, sync::Arc, time::Duration};
+    use std::{sync::Arc, time::Duration};
 
     use crate::{
         client::BlobProvider,
-        config::{EigenConfig, EigenSecrets, PrivateKey},
+        config::EigenConfig,
         errors::{CommunicationError, EigenClientError},
         test_eigenda_config, EigenClient,
     };
     use backon::{ConstantBuilder, Retryable};
+    use rust_eigenda_signers::PrivateKeySigner;
     use serial_test::serial;
 
     use crate::blob_info::BlobInfo;
 
-    impl EigenClient {
+    impl<S> EigenClient<S> {
         pub(crate) async fn get_commitment(
             &self,
             blob_id: &str,
@@ -29,8 +30,8 @@ mod tests {
     const STATUS_QUERY_INTERVAL: Duration = Duration::from_millis(5);
     const MAX_RETRY_ATTEMPTS: usize = 1800000; // With this value we retry for a duration of 30 minutes
 
-    async fn get_blob_info(
-        client: &EigenClient,
+    async fn get_blob_info<S>(
+        client: &EigenClient<S>,
         blob_id: &str,
     ) -> Result<BlobInfo, EigenClientError> {
         let blob_info = (|| async {
@@ -76,21 +77,24 @@ mod tests {
     #[serial]
     async fn test_non_auth_dispersal() {
         let config = test_eigenda_config();
-        let secrets = EigenSecrets {
-            private_key: PrivateKey::from_str(
-                "d08aa7ae1bb5ddd46c3c2d8cdb5894ab9f54dec467233686ca42629e826ac4c6",
-            )
-            .unwrap(),
-        };
-        let client = EigenClient::new(config.clone(), secrets, Arc::new(MockBlobProvider))
-            .await
-            .unwrap();
+        let private_key =
+            "d08aa7ae1bb5ddd46c3c2d8cdb5894ab9f54dec467233686ca42629e826ac4c6"
+                .parse()
+                .unwrap();
+
+        let pk_signer = PrivateKeySigner::new(private_key);
+        let client =
+            EigenClient::new(config.clone(), pk_signer, Arc::new(MockBlobProvider))
+                .await
+                .unwrap();
         let data = vec![1; 20];
         let result = client.dispatch_blob(data.clone()).await.unwrap();
 
         let blob_info = get_blob_info(&client, &result).await.unwrap();
-        let expected_inclusion_data = blob_info.clone().blob_verification_proof.inclusion_proof;
-        let actual_inclusion_data = client.get_inclusion_data(&result).await.unwrap().unwrap();
+        let expected_inclusion_data =
+            blob_info.clone().blob_verification_proof.inclusion_proof;
+        let actual_inclusion_data =
+            client.get_inclusion_data(&result).await.unwrap().unwrap();
         assert!(actual_inclusion_data
             .windows(expected_inclusion_data.len())
             .any(|window| window == expected_inclusion_data)); // Checks that the verification proof is included in the inclusion data
@@ -115,21 +119,23 @@ mod tests {
             authenticated: true,
             ..test_eigenda_config()
         };
-        let secrets = EigenSecrets {
-            private_key: PrivateKey::from_str(
-                "d08aa7ae1bb5ddd46c3c2d8cdb5894ab9f54dec467233686ca42629e826ac4c6",
-            )
-            .unwrap(),
-        };
-        let client = EigenClient::new(config.clone(), secrets, Arc::new(MockBlobProvider))
-            .await
+        let pk = "d08aa7ae1bb5ddd46c3c2d8cdb5894ab9f54dec467233686ca42629e826ac4c6"
+            .parse()
             .unwrap();
+
+        let pk_signer = PrivateKeySigner::new(pk);
+        let client =
+            EigenClient::new(config.clone(), pk_signer, Arc::new(MockBlobProvider))
+                .await
+                .unwrap();
         let data = vec![1; 20];
         let result = client.dispatch_blob(data.clone()).await.unwrap();
         let blob_info = get_blob_info(&client, &result).await.unwrap();
 
-        let expected_inclusion_data = blob_info.clone().blob_verification_proof.inclusion_proof;
-        let actual_inclusion_data = client.get_inclusion_data(&result).await.unwrap().unwrap();
+        let expected_inclusion_data =
+            blob_info.clone().blob_verification_proof.inclusion_proof;
+        let actual_inclusion_data =
+            client.get_inclusion_data(&result).await.unwrap().unwrap();
         assert!(actual_inclusion_data
             .windows(expected_inclusion_data.len())
             .any(|window| window == expected_inclusion_data)); // Checks that the verification proof is included in the inclusion data
@@ -155,21 +161,22 @@ mod tests {
             authenticated: true,
             ..test_eigenda_config()
         };
-        let secrets = EigenSecrets {
-            private_key: PrivateKey::from_str(
-                "d08aa7ae1bb5ddd46c3c2d8cdb5894ab9f54dec467233686ca42629e826ac4c6",
-            )
-            .unwrap(),
-        };
-        let client = EigenClient::new(config.clone(), secrets, Arc::new(MockBlobProvider))
-            .await
+        let pk = "d08aa7ae1bb5ddd46c3c2d8cdb5894ab9f54dec467233686ca42629e826ac4c6"
+            .parse()
             .unwrap();
+        let pk_signer = PrivateKeySigner::new(pk);
+        let client =
+            EigenClient::new(config.clone(), pk_signer, Arc::new(MockBlobProvider))
+                .await
+                .unwrap();
         let data = vec![1; 20];
         let result = client.dispatch_blob(data.clone()).await.unwrap();
         let blob_info = get_blob_info(&client, &result).await.unwrap();
 
-        let expected_inclusion_data = blob_info.clone().blob_verification_proof.inclusion_proof;
-        let actual_inclusion_data = client.get_inclusion_data(&result).await.unwrap().unwrap();
+        let expected_inclusion_data =
+            blob_info.clone().blob_verification_proof.inclusion_proof;
+        let actual_inclusion_data =
+            client.get_inclusion_data(&result).await.unwrap().unwrap();
         assert!(actual_inclusion_data
             .windows(expected_inclusion_data.len())
             .any(|window| window == expected_inclusion_data)); // Checks that the verification proof is included in the inclusion data
@@ -194,21 +201,22 @@ mod tests {
             settlement_layer_confirmation_depth: 5,
             ..test_eigenda_config()
         };
-        let secrets = EigenSecrets {
-            private_key: PrivateKey::from_str(
-                "d08aa7ae1bb5ddd46c3c2d8cdb5894ab9f54dec467233686ca42629e826ac4c6",
-            )
-            .unwrap(),
-        };
-        let client = EigenClient::new(config.clone(), secrets, Arc::new(MockBlobProvider))
-            .await
+        let pk = "d08aa7ae1bb5ddd46c3c2d8cdb5894ab9f54dec467233686ca42629e826ac4c6"
+            .parse()
             .unwrap();
+        let pk_signer = PrivateKeySigner::new(pk);
+        let client =
+            EigenClient::new(config.clone(), pk_signer, Arc::new(MockBlobProvider))
+                .await
+                .unwrap();
         let data = vec![1; 20];
         let result = client.dispatch_blob(data.clone()).await.unwrap();
         let blob_info = get_blob_info(&client, &result).await.unwrap();
 
-        let expected_inclusion_data = blob_info.clone().blob_verification_proof.inclusion_proof;
-        let actual_inclusion_data = client.get_inclusion_data(&result).await.unwrap().unwrap();
+        let expected_inclusion_data =
+            blob_info.clone().blob_verification_proof.inclusion_proof;
+        let actual_inclusion_data =
+            client.get_inclusion_data(&result).await.unwrap().unwrap();
         assert!(actual_inclusion_data
             .windows(expected_inclusion_data.len())
             .any(|window| window == expected_inclusion_data)); // Checks that the verification proof is included in the inclusion data
@@ -234,21 +242,22 @@ mod tests {
             authenticated: true,
             ..test_eigenda_config()
         };
-        let secrets = EigenSecrets {
-            private_key: PrivateKey::from_str(
-                "d08aa7ae1bb5ddd46c3c2d8cdb5894ab9f54dec467233686ca42629e826ac4c6",
-            )
-            .unwrap(),
-        };
-        let client = EigenClient::new(config.clone(), secrets, Arc::new(MockBlobProvider))
-            .await
+        let pk = "d08aa7ae1bb5ddd46c3c2d8cdb5894ab9f54dec467233686ca42629e826ac4c6"
+            .parse()
             .unwrap();
+        let pk_signer = PrivateKeySigner::new(pk);
+        let client =
+            EigenClient::new(config.clone(), pk_signer, Arc::new(MockBlobProvider))
+                .await
+                .unwrap();
         let data = vec![1; 20];
         let result = client.dispatch_blob(data.clone()).await.unwrap();
         let blob_info = get_blob_info(&client, &result).await.unwrap();
 
-        let expected_inclusion_data = blob_info.clone().blob_verification_proof.inclusion_proof;
-        let actual_inclusion_data = client.get_inclusion_data(&result).await.unwrap().unwrap();
+        let expected_inclusion_data =
+            blob_info.clone().blob_verification_proof.inclusion_proof;
+        let actual_inclusion_data =
+            client.get_inclusion_data(&result).await.unwrap().unwrap();
         assert!(actual_inclusion_data
             .windows(expected_inclusion_data.len())
             .any(|window| window == expected_inclusion_data)); // Checks that the verification proof is included in the inclusion data
@@ -273,21 +282,23 @@ mod tests {
             custom_quorum_numbers: vec![2],
             ..test_eigenda_config()
         };
-        let secrets = EigenSecrets {
-            private_key: PrivateKey::from_str(
-                "d08aa7ae1bb5ddd46c3c2d8cdb5894ab9f54dec467233686ca42629e826ac4c6",
-            )
-            .unwrap(),
-        };
-        let client = EigenClient::new(config.clone(), secrets, Arc::new(MockBlobProvider))
-            .await
+        let pk = "d08aa7ae1bb5ddd46c3c2d8cdb5894ab9f54dec467233686ca42629e826ac4c6"
+            .parse()
             .unwrap();
+        let pk_signer = PrivateKeySigner::new(pk);
+
+        let client =
+            EigenClient::new(config.clone(), pk_signer, Arc::new(MockBlobProvider))
+                .await
+                .unwrap();
         let data = vec![1; 20];
         let result = client.dispatch_blob(data.clone()).await.unwrap();
 
         let blob_info = get_blob_info(&client, &result).await.unwrap();
-        let expected_inclusion_data = blob_info.clone().blob_verification_proof.inclusion_proof;
-        let actual_inclusion_data = client.get_inclusion_data(&result).await.unwrap().unwrap();
+        let expected_inclusion_data =
+            blob_info.clone().blob_verification_proof.inclusion_proof;
+        let actual_inclusion_data =
+            client.get_inclusion_data(&result).await.unwrap().unwrap();
         assert!(actual_inclusion_data
             .windows(expected_inclusion_data.len())
             .any(|window| window == expected_inclusion_data)); // Checks that the verification proof is included in the inclusion data

@@ -167,11 +167,10 @@ impl KmsProcess {
             .context("Failed to parse public key DER from KMS")?;
 
         // Convert k256 public key to secp256k1 public key
-        let secp_pub_key = PublicKey::from_slice(
-            k256_pub_key.to_encoded_point(false).as_bytes(),
-        )
-        .map_err(|e| SignerError::SignerSpecific(Box::new(e)))
-        .context("Failed to convert k256 pubkey to secp256k1 pubkey")?;
+        let secp_pub_key =
+            PublicKey::from_slice(k256_pub_key.to_encoded_point(false).as_bytes())
+                .map_err(|e| SignerError::SignerSpecific(Box::new(e)))
+                .context("Failed to convert k256 pubkey to secp256k1 pubkey")?;
 
         Ok(AwsKmsSigner {
             key_id,
@@ -306,7 +305,7 @@ impl Signer for AwsKmsSigner {
             secp_recid,
         )
         .map_err(|e| SignerError::SignerSpecific(Box::new(e)))?;
-        
+
         Ok(standard_recoverable_sig)
     }
 
@@ -352,26 +351,25 @@ mod tests {
     use anyhow::Result;
     use k256::ecdsa::SigningKey as K256SigningKey;
     use rand::rngs::OsRng;
-    use rust_eigenda_signers::LocalSigner;
     use rust_eigenda_signers::ecdsa::RecoverableSignature as SecpRecoverableSignature;
     use rust_eigenda_signers::Message as SecpMessage;
+    use rust_eigenda_signers::PrivateKeySigner;
     use secp256k1::Secp256k1;
     use sha2::{Digest, Sha256};
 
-    async fn setup_kms_and_signer() -> Result<(KmsProcess, LocalSigner, AwsKmsSigner)> {
+    async fn setup_kms_and_signer() -> Result<(KmsProcess, PrivateKeySigner, AwsKmsSigner)>
+    {
         let kms_proc = Kms::default().with_show_logs(false).start().await?;
-        
+
         let k256_secret_key = k256::SecretKey::random(&mut OsRng);
         let k256_signing_key = K256SigningKey::from(&k256_secret_key);
-        
+
         let secp_secret_key =
             secp256k1::SecretKey::from_slice(&k256_secret_key.to_bytes())
                 .expect("Failed to create secp256k1 secret key from k256 bytes");
-        let local_signer = LocalSigner::new(secp_secret_key);
+        let local_signer = PrivateKeySigner::new(secp_secret_key);
 
-        let kms_key_id = kms_proc
-            .inject_secp256k1_key(&k256_signing_key)
-            .await?;
+        let kms_key_id = kms_proc.inject_secp256k1_key(&k256_signing_key).await?;
 
         let aws_signer = kms_proc.get_signer(kms_key_id).await?;
 

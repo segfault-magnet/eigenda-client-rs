@@ -1,17 +1,18 @@
-use crate::{Signer, SignerError, ecdsa};
+use crate::{ecdsa, Signer, SignerError};
 use async_trait::async_trait;
 use rand::rngs::OsRng;
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 
 /// A signer that uses a local private key stored in memory.
 #[derive(Clone, Debug)] // Deriving Debug is fine here as SecretKey has a safe Debug impl
-pub struct LocalSigner {
+pub struct PrivateKeySigner {
     secret_key: SecretKey,
     secp: Secp256k1<secp256k1::All>,
 }
 
-impl LocalSigner {
+impl PrivateKeySigner {
     /// Creates a new signer with a randomly generated private key.
+    // TODO: segfault rand source as arg
     pub fn random() -> Self {
         let secp = Secp256k1::new();
         let (secret_key, _) = secp.generate_keypair(&mut OsRng);
@@ -26,7 +27,7 @@ impl LocalSigner {
 }
 
 #[async_trait]
-impl Signer for LocalSigner {
+impl Signer for PrivateKeySigner {
     async fn sign_digest(
         &self,
         message: &Message,
@@ -51,24 +52,28 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_signer_sign_and_verify() {
-        let signer = LocalSigner::random();
+        let signer = PrivateKeySigner::random();
         let public_key = signer.public_key();
 
         let message_bytes = b"Test message for local signer";
         let digest: [u8; 32] = Sha256::digest(message_bytes).into();
-        let message = Message::from_slice(&digest).expect("Failed to create Message from digest");
+        let message =
+            Message::from_slice(&digest).expect("Failed to create Message from digest");
 
-        let recoverable_sig: SecpRecoverableSignature = signer.sign_digest(&message).await.expect("Signing failed");
+        let recoverable_sig: SecpRecoverableSignature =
+            signer.sign_digest(&message).await.expect("Signing failed");
 
         let secp = Secp256k1::new();
-        let recovered_pk = secp.recover_ecdsa(&message, &recoverable_sig).expect("Recovery failed");
+        let recovered_pk = secp
+            .recover_ecdsa(&message, &recoverable_sig)
+            .expect("Recovery failed");
 
         assert_eq!(recovered_pk, public_key, "Recovered public key mismatch");
     }
 
     #[test]
     fn test_local_signer_address() {
-        let signer = LocalSigner::random();
+        let signer = PrivateKeySigner::random();
         let public_key = signer.public_key();
         let address = signer.address();
 

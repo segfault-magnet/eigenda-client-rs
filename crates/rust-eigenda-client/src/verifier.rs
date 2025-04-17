@@ -125,7 +125,8 @@ impl SvcManagerClient for EthClient {
         &self,
         quorum_number: u8,
     ) -> Result<u8, VerificationError> {
-        let func_selector = ethabi::short_signature("quorumAdversaryThresholdPercentages", &[]);
+        let func_selector =
+            ethabi::short_signature("quorumAdversaryThresholdPercentages", &[]);
         let data = func_selector.to_vec();
 
         let res = self
@@ -189,7 +190,9 @@ impl<T: SvcManagerClient> Verifier<T> {
     pub(crate) const G2POINT: &'static str = "g2.point.powerOf2";
     pub(crate) const POINT_SIZE: u32 = 32;
 
-    async fn download_temp_point(url: &String) -> Result<NamedTempFile, VerificationError> {
+    async fn download_temp_point(
+        url: &String,
+    ) -> Result<NamedTempFile, VerificationError> {
         let response = reqwest::get(url)
             .await
             .map_err(|e| VerificationError::PointDownloadError(e.to_string()))?;
@@ -225,7 +228,9 @@ impl<T: SvcManagerClient> Verifier<T> {
         Ok::<NamedTempFile, VerificationError>(temp_file)
     }
 
-    async fn get_points(cfg: &EigenConfig) -> Result<(PointFile, PointFile), VerificationError> {
+    async fn get_points(
+        cfg: &EigenConfig,
+    ) -> Result<(PointFile, PointFile), VerificationError> {
         match &cfg.srs_points_source {
             SrsPointsSource::Path(path) => Ok((
                 PointFile::Path(PathBuf::from(format!("{}/{}", path, Self::G1POINT))),
@@ -239,16 +244,22 @@ impl<T: SvcManagerClient> Verifier<T> {
     }
 
     /// Returns a new Verifier
-    pub(crate) async fn new(cfg: EigenConfig, eth_client: T) -> Result<Self, VerificationError> {
-        let srs_points_to_load = RawEigenClient::blob_size_limit() as u32 / Self::POINT_SIZE;
+    pub(crate) async fn new(
+        cfg: EigenConfig,
+        eth_client: T,
+    ) -> Result<Self, VerificationError> {
+        let srs_points_to_load =
+            RawEigenClient::<()>::blob_size_limit() as u32 / Self::POINT_SIZE;
         let (g1_point_file, g2_point_file) = Self::get_points(&cfg).await?;
         let kzg_handle = tokio::task::spawn_blocking(move || {
-            let g1_point_file_path = g1_point_file.path().to_str().ok_or(KzgError::Setup(
-                "Could not format point path into a valid string".to_string(),
-            ))?;
-            let g2_point_file_path = g2_point_file.path().to_str().ok_or(KzgError::Setup(
-                "Could not format point path into a valid string".to_string(),
-            ))?;
+            let g1_point_file_path =
+                g1_point_file.path().to_str().ok_or(KzgError::Setup(
+                    "Could not format point path into a valid string".to_string(),
+                ))?;
+            let g2_point_file_path =
+                g2_point_file.path().to_str().ok_or(KzgError::Setup(
+                    "Could not format point path into a valid string".to_string(),
+                ))?;
             Kzg::setup(
                 g1_point_file_path,
                 "",
@@ -369,7 +380,10 @@ impl<T: SvcManagerClient> Verifier<T> {
     }
 
     /// Verifies the certificate's batch root
-    pub(crate) fn verify_merkle_proof(&self, cert: &BlobInfo) -> Result<(), VerificationError> {
+    pub(crate) fn verify_merkle_proof(
+        &self,
+        cert: &BlobInfo,
+    ) -> Result<(), VerificationError> {
         let inclusion_proof = &cert.blob_verification_proof.inclusion_proof;
         let root = &cert
             .blob_verification_proof
@@ -447,7 +461,10 @@ impl<T: SvcManagerClient> Verifier<T> {
     }
 
     /// Verifies the certificate batch hash
-    pub(crate) async fn verify_batch(&self, blob_info: &BlobInfo) -> Result<(), VerificationError> {
+    pub(crate) async fn verify_batch(
+        &self,
+        blob_info: &BlobInfo,
+    ) -> Result<(), VerificationError> {
         let expected_hash = self.call_batch_id_to_metadata_hash(blob_info).await?;
 
         if expected_hash == vec![0u8; 32] {
@@ -501,7 +518,9 @@ impl<T: SvcManagerClient> Verifier<T> {
 
         let mut confirmed_quorums: HashMap<u8, bool> = HashMap::new();
         for i in 0..blob_header.blob_quorum_params.len() {
-            if batch_header.quorum_numbers[i] != blob_header.blob_quorum_params[i].quorum_number {
+            if batch_header.quorum_numbers[i]
+                != blob_header.blob_quorum_params[i].quorum_number
+            {
                 return Err(VerificationError::WrongQuorumParams {
                     blob_quorum_params: blob_header.blob_quorum_params[i].clone(),
                 });
@@ -514,7 +533,9 @@ impl<T: SvcManagerClient> Verifier<T> {
                 });
             }
             let quorum_adversary_threshold = self
-                .get_quorum_adversary_threshold(blob_header.blob_quorum_params[i].quorum_number)
+                .get_quorum_adversary_threshold(
+                    blob_header.blob_quorum_params[i].quorum_number,
+                )
                 .await?;
 
             if quorum_adversary_threshold > 0
@@ -534,7 +555,8 @@ impl<T: SvcManagerClient> Verifier<T> {
                 });
             }
 
-            confirmed_quorums.insert(blob_header.blob_quorum_params[i].quorum_number, true);
+            confirmed_quorums
+                .insert(blob_header.blob_quorum_params[i].quorum_number, true);
         }
 
         let required_quorums = self.call_quorum_numbers_required().await?;

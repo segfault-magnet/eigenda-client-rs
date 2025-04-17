@@ -8,8 +8,8 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [features]
-default = ["local-signer"]
-local-signer = []
+default = ["private-key-signer"]
+private-key-signer = []
 
 [dependencies]
 # Revert to inheriting from workspace

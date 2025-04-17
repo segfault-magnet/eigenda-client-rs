@@ -1,18 +1,18 @@
 use async_trait::async_trait;
 // Re-export key types from secp256k1
-pub use secp256k1::{Error as SecpError, Message, PublicKey};
-pub use secp256k1::ecdsa; // Re-exports RecoverableSignature, Signature, etc.
+pub use secp256k1::ecdsa;
+pub use secp256k1::{Error as SecpError, Message, PublicKey}; // Re-exports RecoverableSignature, Signature, etc.
 
 // Restore necessary internal import for the trait signature
 use secp256k1::ecdsa::RecoverableSignature;
 use std::error::Error;
 
-#[cfg(feature = "local-signer")]
+#[cfg(feature = "private-key-signer")]
 pub mod local;
-#[cfg(feature = "local-signer")]
-pub use local::LocalSigner;
+#[cfg(feature = "private-key-signer")]
+pub use local::PrivateKeySigner;
 // Conditionally re-export SecretKey
-#[cfg(feature = "local-signer")]
+#[cfg(feature = "private-key-signer")]
 pub use secp256k1::SecretKey;
 
 /// Represents a potential error during the signing process.
