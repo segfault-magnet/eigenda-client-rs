@@ -318,18 +318,18 @@ impl<S> RawEigenClient<S> {
         let digest = self.keccak256(&buf);
 
         let msg = Message::from_slice(&digest).expect("digest to be 32 bytes");
-        let signature = self
+        let authentication_data = self
             .signer
             .sign_digest(&msg)
             .await
             .map_err(|e| {
                 EigenClientError::Communication(CommunicationError::Signing(Box::new(e)))
             })?
-            .encode();
+            .encode_as_rsv();
 
         let req = disperser::AuthenticatedRequest {
             payload: Some(AuthenticationData(disperser::AuthenticationData {
-                authentication_data: signature.to_vec(),
+                authentication_data,
             })),
         };
 

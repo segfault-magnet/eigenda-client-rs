@@ -49,7 +49,7 @@ impl Signer for PrivateKeySigner {
 
 #[cfg(test)]
 mod tests {
-    use crate::keccak256;
+    use crate::public_key::keccak256;
 
     use super::*;
     use rand::thread_rng;

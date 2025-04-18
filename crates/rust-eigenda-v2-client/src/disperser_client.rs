@@ -144,8 +144,7 @@ impl<S> DisperserClient<S> {
             .sign_digest(&blob_header.blob_key()?.into())
             .await
             .map_err(|e| DisperseError::Signer(Box::new(e)))?
-            .encode()
-            .to_vec();
+            .encode_as_rsv();
         let disperse_request = DisperseBlobRequest {
             blob: data.to_vec(),
             blob_header: Some(BlobHeaderProto {
@@ -218,8 +217,7 @@ impl<S> DisperserClient<S> {
             .sign_digest(&digest)
             .await
             .map_err(|e| DisperseError::Signer(Box::new(e)))?
-            .encode()
-            .to_vec();
+            .encode_as_rsv();
         let request = GetPaymentStateRequest {
             account_id,
             signature,
