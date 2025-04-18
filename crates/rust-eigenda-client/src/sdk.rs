@@ -325,7 +325,7 @@ impl<S> RawEigenClient<S> {
             .signer
             .sign_digest(&msg)
             .await
-            .map_err(|e| EigenClientError::Communication(CommunicationError::Signing(e)))?
+            .map_err(|e| EigenClientError::Communication(CommunicationError::Signing(Box::new(e))))?
             .encode();
 
         let req = disperser::AuthenticatedRequest {

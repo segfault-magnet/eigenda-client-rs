@@ -3,7 +3,6 @@ use rust_kzg_bn254_primitives::errors::KzgError;
 
 use crate::relay_client::RelayKey;
 use prost::DecodeError;
-use rust_eigenda_signers::SignerError;
 
 /// Errors returned by this crate
 #[derive(Debug, thiserror::Error)]
@@ -175,7 +174,7 @@ pub enum DisperseError {
     #[error("Failed to get current time")]
     SystemTime(#[from] std::time::SystemTimeError),
     #[error(transparent)]
-    Signer(#[from] SignerError),
+    Signer(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
 /// Errors specific to the PayloadDisperser

@@ -16,13 +16,6 @@ pub mod local;
 #[cfg(feature = "private-key-signer")]
 pub use local::PrivateKeySigner;
 
-/// Represents a potential error during the signing process.
-#[derive(Debug, thiserror::Error)]
-pub enum SignerError {
-    #[error("Signer-specific implementation error")]
-    SignerSpecific(#[source] Box<dyn Error + Send + Sync>),
-}
-
 pub struct RecoverableSignature(pub secp256k1::ecdsa::RecoverableSignature);
 impl From<secp256k1::ecdsa::RecoverableSignature> for RecoverableSignature {
     fn from(sig: secp256k1::ecdsa::RecoverableSignature) -> Self {
@@ -44,11 +37,13 @@ impl RecoverableSignature {
 /// A trait for signing messages using different key management strategies.
 #[async_trait]
 pub trait Signer: Send + Sync + std::fmt::Debug {
+    type Error: Error + Send + Sync + 'static;
+
     /// Signs a digest using the signer's key.
     async fn sign_digest(
         &self,
         message: &Message,
-    ) -> Result<RecoverableSignature, SignerError>;
+    ) -> Result<RecoverableSignature, Self::Error>;
 
     /// Returns the public key associated with this signer.
     fn public_key(&self) -> PublicKey;

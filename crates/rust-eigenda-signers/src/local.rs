@@ -1,4 +1,6 @@
-use crate::{RecoverableSignature, Signer, SignerError};
+use std::convert::Infallible;
+
+use crate::{RecoverableSignature, Signer};
 use async_trait::async_trait;
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 
@@ -30,10 +32,12 @@ impl PrivateKeySigner {
 
 #[async_trait]
 impl Signer for PrivateKeySigner {
+    type Error = Infallible;
+
     async fn sign_digest(
         &self,
         message: &Message,
-    ) -> Result<RecoverableSignature, SignerError> {
+    ) -> Result<RecoverableSignature, Self::Error> {
         let sig = self.secp.sign_ecdsa_recoverable(message, &self.secret_key);
         Ok(sig.into())
     }

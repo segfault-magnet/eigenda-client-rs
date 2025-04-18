@@ -142,7 +142,8 @@ impl<S> DisperserClient<S> {
         let signature = self
             .signer
             .sign_digest(&blob_header.blob_key()?.into())
-            .await?
+            .await
+            .map_err(|e| DisperseError::Signer(Box::new(e)))?
             .encode()
             .to_vec();
         let disperse_request = DisperseBlobRequest {
@@ -211,7 +212,7 @@ impl<S> DisperserClient<S> {
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
         let digest = PaymentStateRequest::new(timestamp as u64)
             .prepare_for_signing_by(&self.signer.address().into());
-        let signature = self.signer.sign_digest(&digest).await?.encode().to_vec();
+        let signature = self.signer.sign_digest(&digest).await.map_err(|e| DisperseError::Signer(Box::new(e)))?.encode().to_vec();
         let request = GetPaymentStateRequest {
             account_id,
             signature,

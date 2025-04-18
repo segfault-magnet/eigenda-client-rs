@@ -1,5 +1,4 @@
 use ark_bn254::G1Affine;
-use rust_eigenda_signers::SignerError;
 use tokio::sync::mpsc::error::SendError;
 use tonic::{transport::Error as TonicError, Status};
 
@@ -49,7 +48,7 @@ pub enum CommunicationError {
     #[error("Error from server: {0}")]
     ErrorFromServer(String),
     #[error(transparent)]
-    Signing(SignerError),
+    Signing(Box<dyn std::error::Error + Send + Sync>),
     #[error(transparent)]
     Hex(#[from] hex::FromHexError),
     #[error(transparent)]
