@@ -69,7 +69,7 @@ impl<S> DisperserClient<S> {
         let rpc_client = disperser_client::DisperserClient::new(channel);
         let signer = config.signer;
         let accountant = Accountant::new(
-            signer.public_key().address().into(),
+            signer.public_key().address(),
             ReservedPayment::default(),
             OnDemandPayment::default(),
             0,
@@ -207,11 +207,10 @@ impl<S> DisperserClient<S> {
     where
         S: Sign,
     {
-        let account_id =
-            (ethereum_types::H160::from(self.signer.public_key().address())).encode_hex();
+        let account_id = self.signer.public_key().address().encode_hex();
         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
         let digest = PaymentStateRequest::new(timestamp as u64)
-            .prepare_for_signing_by(&self.signer.public_key().address().into());
+            .prepare_for_signing_by(&self.signer.public_key().address());
         let signature = self
             .signer
             .sign_digest(&digest)

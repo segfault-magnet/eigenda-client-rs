@@ -49,7 +49,7 @@ impl Sign for Signer {
 
 #[cfg(test)]
 mod tests {
-    use crate::public_key::keccak256;
+    use std::str::FromStr;
 
     use super::*;
     use rand::thread_rng;
@@ -58,6 +58,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_signer_sign_and_verify() {
+        // given
         let signer = Signer::random(&mut thread_rng());
         let public_key = signer.public_key();
 
@@ -66,9 +67,11 @@ mod tests {
         let message =
             Message::from_slice(&digest).expect("Failed to create Message from digest");
 
+        // when
         let recoverable_sig: RecoverableSignature =
             signer.sign_digest(&message).await.expect("Signing failed");
 
+        // then
         let secp = Secp256k1::new();
         let recovered_pk = secp
             .recover_ecdsa(&message, &recoverable_sig.0)
@@ -79,15 +82,21 @@ mod tests {
 
     #[test]
     fn test_local_signer_address() {
-        let signer = Signer::random(&mut thread_rng());
-        let public_key = signer.public_key();
+        // given
+        let key = SecretKey::from_str(
+            "856f2fd4e3ff354a7f43680d6d9da56390184b43ec63beb06b66c9fd1bc79858",
+        )
+        .unwrap();
+        let signer = Signer::new(key);
+
+        // when
         let address = signer.public_key().address();
 
-        // Calculate expected address manually
-        let pk_bytes_uncompressed = public_key.0.serialize_uncompressed();
-        let hash = keccak256(&pk_bytes_uncompressed[1..]); // Skip prefix 0x04
-        let mut expected_address = [0u8; 20];
-        expected_address.copy_from_slice(&hash[12..]);
+        // then
+
+        let expected_address = "0x08AbDA505838eb8929c2c1cABD7E1c26e4BA94e1"
+            .parse()
+            .unwrap();
 
         assert_eq!(address, expected_address, "Ethereum address mismatch");
     }

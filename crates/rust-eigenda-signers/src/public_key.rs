@@ -1,3 +1,5 @@
+use ethereum_types::H160;
+
 use crate::secp256k1;
 use std::convert::AsRef;
 use std::hash::Hash;
@@ -28,14 +30,14 @@ impl AsRef<secp256k1::PublicKey> for PublicKey {
 
 impl PublicKey {
     /// Computes the Ethereum address associated with this public key.
-    pub fn address(&self) -> [u8; 20] {
+    pub fn address(&self) -> H160 {
         let public_key = self.0.serialize_uncompressed();
         // Ethereum address is the last 20 bytes of the Keccak256 hash
         // of the uncompressed public key (excluding the prefix 0x04)
         let hash = keccak256(&public_key[1..]);
         let mut address = [0u8; 20];
         address.copy_from_slice(&hash[12..]);
-        address
+        address.into()
     }
 }
 
@@ -49,4 +51,3 @@ pub(crate) fn keccak256(input: &[u8]) -> [u8; 32] {
     hasher.finalize(&mut output);
     output
 }
-

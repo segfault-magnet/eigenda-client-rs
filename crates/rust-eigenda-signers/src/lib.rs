@@ -8,6 +8,11 @@ pub mod secp256k1 {
     pub use ::secp256k1::SecretKey;
     pub use ::secp256k1::{Message, PublicKey};
 }
+
+pub mod ethereum_types {
+    pub use ethereum_types::H160;
+}
+
 mod public_key;
 mod signature;
 pub mod signers;
