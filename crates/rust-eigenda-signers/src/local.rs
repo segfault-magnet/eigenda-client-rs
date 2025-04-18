@@ -1,8 +1,8 @@
 use std::convert::Infallible;
 
-use crate::{RecoverableSignature, Signer};
+use crate::{PublicKey, RecoverableSignature, Signer};
 use async_trait::async_trait;
-use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
+use secp256k1::{Message, Secp256k1, SecretKey};
 
 /// A signer that uses a local private key stored in memory.
 #[derive(Clone, Debug)] // Deriving Debug is fine here as SecretKey has a safe Debug impl
@@ -43,7 +43,7 @@ impl Signer for PrivateKeySigner {
     }
 
     fn public_key(&self) -> PublicKey {
-        PublicKey::from_secret_key(&self.secp, &self.secret_key)
+        secp256k1::PublicKey::from_secret_key(&self.secp, &self.secret_key).into()
     }
 }
 
@@ -74,17 +74,17 @@ mod tests {
             .recover_ecdsa(&message, &recoverable_sig.0)
             .expect("Recovery failed");
 
-        assert_eq!(recovered_pk, public_key, "Recovered public key mismatch");
+        assert_eq!(recovered_pk, public_key.0, "Recovered public key mismatch");
     }
 
     #[test]
     fn test_local_signer_address() {
         let signer = PrivateKeySigner::random(&mut thread_rng());
         let public_key = signer.public_key();
-        let address = signer.address();
+        let address = signer.public_key().address();
 
         // Calculate expected address manually
-        let pk_bytes_uncompressed = public_key.serialize_uncompressed();
+        let pk_bytes_uncompressed = public_key.0.serialize_uncompressed();
         let hash = keccak256(&pk_bytes_uncompressed[1..]); // Skip prefix 0x04
         let mut expected_address = [0u8; 20];
         expected_address.copy_from_slice(&hash[12..]);

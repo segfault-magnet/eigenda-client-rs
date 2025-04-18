@@ -18,6 +18,7 @@ async-trait = "0.1.74"
 thiserror = { workspace = true }
 tiny-keccak = { workspace = true }
 rand = "0.8.5"
+ethereum-types = { workspace = true }
 
 [dev-dependencies]
 # Add dev dependencies for tests

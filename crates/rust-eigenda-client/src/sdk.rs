@@ -19,10 +19,7 @@ use crate::{
     },
 };
 use byteorder::{BigEndian, ByteOrder};
-use rust_eigenda_signers::{
-    secp256k1::{Message, PublicKey},
-    Signer,
-};
+use rust_eigenda_signers::{secp256k1::Message, PublicKey, Signer};
 use tiny_keccak::{Hasher, Keccak};
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
@@ -325,7 +322,9 @@ impl<S> RawEigenClient<S> {
             .signer
             .sign_digest(&msg)
             .await
-            .map_err(|e| EigenClientError::Communication(CommunicationError::Signing(Box::new(e))))?
+            .map_err(|e| {
+                EigenClientError::Communication(CommunicationError::Signing(Box::new(e)))
+            })?
             .encode();
 
         let req = disperser::AuthenticatedRequest {
@@ -442,7 +441,7 @@ impl<S> RawEigenClient<S> {
 }
 
 fn get_account_id(public_key: &PublicKey) -> String {
-    let hex = hex::encode(public_key.serialize_uncompressed());
+    let hex = hex::encode(public_key.0.serialize_uncompressed());
 
     format!("0x{}", hex)
 }
