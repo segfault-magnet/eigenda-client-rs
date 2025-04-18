@@ -9,7 +9,7 @@ pub(crate) mod verifier;
 pub(crate) mod verifier_tests;
 
 pub use self::client::EigenClient;
-pub use rust_eigenda_signers::{PrivateKeySigner, SecretKey, Signer};
+pub use rust_eigenda_signers::{secp256k1::SecretKey, PrivateKeySigner, Signer};
 
 #[allow(clippy::all)]
 pub(crate) mod generated {

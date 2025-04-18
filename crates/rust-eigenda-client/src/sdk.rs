@@ -19,7 +19,10 @@ use crate::{
     },
 };
 use byteorder::{BigEndian, ByteOrder};
-use rust_eigenda_signers::{Encode, Message, PublicKey, Signer};
+use rust_eigenda_signers::{
+    secp256k1::{Message, PublicKey},
+    Signer,
+};
 use tiny_keccak::{Hasher, Keccak};
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};

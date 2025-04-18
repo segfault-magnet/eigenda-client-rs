@@ -1,6 +1,5 @@
 use ethabi::Token;
 use ethereum_types::U256;
-use rust_eigenda_signers::Message;
 use tiny_keccak::{Hasher, Keccak};
 
 use crate::errors::ConversionError;
@@ -20,9 +19,10 @@ use super::eigenda_cert::BlobHeader;
 #[derive(Debug)]
 pub struct BlobKey([u8; 32]);
 
-impl From<BlobKey> for Message {
+impl From<BlobKey> for rust_eigenda_signers::secp256k1::Message {
     fn from(value: BlobKey) -> Self {
-        Message::from_slice(&value.0).expect("guaranteed to have exactly 32B")
+        rust_eigenda_signers::secp256k1::Message::from_slice(&value.0)
+            .expect("guaranteed to have exactly 32B")
     }
 }
 

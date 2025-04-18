@@ -2,7 +2,7 @@ use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use hex::ToHex;
-use rust_eigenda_signers::{Encode, Signer};
+use rust_eigenda_signers::Signer;
 use tonic::transport::{Channel, ClientTlsConfig};
 
 use crate::accountant::Accountant;

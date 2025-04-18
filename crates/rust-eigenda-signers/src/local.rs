@@ -1,4 +1,4 @@
-use crate::{ecdsa, Signer, SignerError};
+use crate::{RecoverableSignature, Signer, SignerError};
 use async_trait::async_trait;
 use secp256k1::{Message, PublicKey, Secp256k1, SecretKey};
 
@@ -33,9 +33,9 @@ impl Signer for PrivateKeySigner {
     async fn sign_digest(
         &self,
         message: &Message,
-    ) -> Result<ecdsa::RecoverableSignature, SignerError> {
+    ) -> Result<RecoverableSignature, SignerError> {
         let sig = self.secp.sign_ecdsa_recoverable(message, &self.secret_key);
-        Ok(sig)
+        Ok(sig.into())
     }
 
     fn public_key(&self) -> PublicKey {
@@ -48,7 +48,6 @@ mod tests {
     use crate::keccak256;
 
     use super::*;
-    use crate::ecdsa::RecoverableSignature as SecpRecoverableSignature;
     use rand::thread_rng;
     use sha2::{Digest, Sha256};
     use tokio;
@@ -63,12 +62,12 @@ mod tests {
         let message =
             Message::from_slice(&digest).expect("Failed to create Message from digest");
 
-        let recoverable_sig: SecpRecoverableSignature =
+        let recoverable_sig: RecoverableSignature =
             signer.sign_digest(&message).await.expect("Signing failed");
 
         let secp = Secp256k1::new();
         let recovered_pk = secp
-            .recover_ecdsa(&message, &recoverable_sig)
+            .recover_ecdsa(&message, &recoverable_sig.0)
             .expect("Recovery failed");
 
         assert_eq!(recovered_pk, public_key, "Recovered public key mismatch");

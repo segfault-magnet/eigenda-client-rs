@@ -1,19 +1,20 @@
+use ::secp256k1::{Message, PublicKey};
 use async_trait::async_trait;
 // Re-export key types from secp256k1
-pub use secp256k1::ecdsa;
-pub use secp256k1::ecdsa::RecoverableSignature;
-pub use secp256k1::{Error as SecpError, Message, PublicKey};
+pub mod secp256k1 {
+    pub use ::secp256k1::ecdsa;
+    pub use ::secp256k1::ecdsa::RecoverableSignature;
+    #[cfg(feature = "private-key-signer")]
+    pub use ::secp256k1::SecretKey;
+    pub use ::secp256k1::{Error as SecpError, Message, PublicKey};
+}
 
-// Restore necessary internal import for the trait signature
 use std::error::Error;
 
 #[cfg(feature = "private-key-signer")]
 pub mod local;
 #[cfg(feature = "private-key-signer")]
 pub use local::PrivateKeySigner;
-// Conditionally re-export SecretKey
-#[cfg(feature = "private-key-signer")]
-pub use secp256k1::SecretKey;
 
 /// Represents a potential error during the signing process.
 #[derive(Debug, thiserror::Error)]
@@ -22,21 +23,18 @@ pub enum SignerError {
     SignerSpecific(#[source] Box<dyn Error + Send + Sync>),
 }
 
-trait Sealed {}
-
-impl Sealed for RecoverableSignature {}
-
-#[allow(private_bounds)]
-pub trait Encode: Sealed {
-    fn encode(&self) -> [u8; 65];
+pub struct RecoverableSignature(pub secp256k1::ecdsa::RecoverableSignature);
+impl From<secp256k1::ecdsa::RecoverableSignature> for RecoverableSignature {
+    fn from(sig: secp256k1::ecdsa::RecoverableSignature) -> Self {
+        RecoverableSignature(sig)
+    }
 }
 
-impl Encode for RecoverableSignature {
-    // TODO: segfault find better name
-    fn encode(&self) -> [u8; 65] {
-        let (recovery_id, sig) = self.serialize_compact();
+impl RecoverableSignature {
+    pub fn encode(&self) -> Vec<u8> {
+        let (recovery_id, sig) = self.0.serialize_compact();
 
-        let mut signature = [0u8; 65];
+        let mut signature = vec![0u8; 65];
         signature[0..64].copy_from_slice(&sig);
         signature[64] = recovery_id.to_i32() as u8;
         signature

@@ -1,6 +1,6 @@
 use ethereum_types::Address;
 use num_bigint::BigInt;
-use rust_eigenda_signers::Message;
+use rust_eigenda_signers::secp256k1::Message;
 use sha2::{Digest, Sha256};
 use tiny_keccak::{Hasher, Keccak};
 
