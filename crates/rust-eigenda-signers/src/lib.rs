@@ -8,25 +8,18 @@ pub mod secp256k1 {
     pub use ::secp256k1::SecretKey;
     pub use ::secp256k1::{Message, PublicKey};
 }
+mod public_key;
+mod signature;
+pub mod signers;
 
 use std::error::Error;
 
-// Declare modules
-mod public_key;
-mod signature;
-
-// Re-export the newtype structs
 pub use public_key::PublicKey;
 pub use signature::RecoverableSignature;
 
-#[cfg(feature = "private-key-signer")]
-pub mod local;
-#[cfg(feature = "private-key-signer")]
-pub use local::PrivateKeySigner;
-
 /// A trait for signing messages using different key management strategies.
 #[async_trait]
-pub trait Signer: Send + Sync + std::fmt::Debug {
+pub trait Sign: Send + Sync + std::fmt::Debug {
     type Error: Error + Send + Sync + 'static;
 
     /// Signs a digest using the signer's key.

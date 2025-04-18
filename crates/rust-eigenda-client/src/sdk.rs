@@ -19,7 +19,7 @@ use crate::{
     },
 };
 use byteorder::{BigEndian, ByteOrder};
-use rust_eigenda_signers::{secp256k1::Message, PublicKey, Signer};
+use rust_eigenda_signers::{secp256k1::Message, PublicKey, Sign};
 use tiny_keccak::{Hasher, Keccak};
 use tokio::sync::{mpsc, Mutex};
 use tokio_stream::{wrappers::UnboundedReceiverStream, StreamExt};
@@ -129,7 +129,7 @@ impl<S> RawEigenClient<S> {
         data: Vec<u8>,
     ) -> Result<String, EigenClientError>
     where
-        S: Signer,
+        S: Sign,
     {
         let (tx, rx) = mpsc::unbounded_channel();
 
@@ -261,7 +261,7 @@ impl<S> RawEigenClient<S> {
         data: Vec<u8>,
     ) -> Result<String, EigenClientError>
     where
-        S: Signer,
+        S: Sign,
     {
         if self.config.authenticated {
             self.dispatch_blob_authenticated(data).await
@@ -276,7 +276,7 @@ impl<S> RawEigenClient<S> {
         tx: &mpsc::UnboundedSender<disperser::AuthenticatedRequest>,
     ) -> Result<(), EigenClientError>
     where
-        S: Signer,
+        S: Sign,
     {
         let custom_quorum_numbers: Vec<u32> = self
             .config
@@ -310,7 +310,7 @@ impl<S> RawEigenClient<S> {
         tx: &mpsc::UnboundedSender<disperser::AuthenticatedRequest>,
     ) -> Result<(), EigenClientError>
     where
-        S: Signer,
+        S: Sign,
     {
         // TODO: replace challenge_parameter with actual auth header when it is available
         let mut buf = [0u8; 4];

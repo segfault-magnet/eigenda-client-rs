@@ -2,7 +2,7 @@ use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use hex::ToHex;
-use rust_eigenda_signers::Signer;
+use rust_eigenda_signers::Sign;
 use tonic::transport::{Channel, ClientTlsConfig};
 
 use crate::accountant::Accountant;
@@ -57,7 +57,7 @@ pub struct DisperserClient<S> {
 impl<S> DisperserClient<S> {
     pub async fn new(config: DisperserClientConfig<S>) -> Result<Self, DisperseError>
     where
-        S: Signer,
+        S: Sign,
     {
         let mut endpoint = Channel::from_shared(config.disperser_rpc.clone())
             .map_err(|_| DisperseError::InvalidURI(config.disperser_rpc.clone()))?;
@@ -93,7 +93,7 @@ impl<S> DisperserClient<S> {
         quorums: &[u8],
     ) -> Result<(BlobStatus, BlobKey), DisperseError>
     where
-        S: Signer,
+        S: Sign,
     {
         if quorums.is_empty() {
             return Err(DisperseError::EmptyQuorums);
@@ -177,7 +177,7 @@ impl<S> DisperserClient<S> {
     /// Populates the accountant with the payment state from the disperser.
     async fn populate_accountant(&mut self) -> Result<(), DisperseError>
     where
-        S: Signer,
+        S: Sign,
     {
         let payment_state = self.payment_state().await?;
         self.accountant
@@ -205,7 +205,7 @@ impl<S> DisperserClient<S> {
     /// Returns the payment state of the disperser client
     pub async fn payment_state(&mut self) -> Result<GetPaymentStateReply, DisperseError>
     where
-        S: Signer,
+        S: Sign,
     {
         let account_id =
             (ethereum_types::H160::from(self.signer.public_key().address())).encode_hex();
@@ -255,7 +255,7 @@ mod tests {
     use super::DisperserClientConfig;
 
     use dotenv::dotenv;
-    use rust_eigenda_signers::PrivateKeySigner;
+    use rust_eigenda_signers::signers::private_key::Signer as PrivateKeySigner;
     use serial_test::serial;
     use std::env;
 

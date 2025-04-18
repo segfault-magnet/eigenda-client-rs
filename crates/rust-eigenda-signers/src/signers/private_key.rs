@@ -1,17 +1,17 @@
 use std::convert::Infallible;
 
-use crate::{PublicKey, RecoverableSignature, Signer};
+use crate::{PublicKey, RecoverableSignature, Sign};
 use async_trait::async_trait;
 use secp256k1::{Message, Secp256k1, SecretKey};
 
 /// A signer that uses a local private key stored in memory.
 #[derive(Clone, Debug)] // Deriving Debug is fine here as SecretKey has a safe Debug impl
-pub struct PrivateKeySigner {
+pub struct Signer {
     secret_key: SecretKey,
     secp: Secp256k1<secp256k1::All>,
 }
 
-impl PrivateKeySigner {
+impl Signer {
     /// Creates a new signer with a randomly generated private key.
     pub fn random<R: rand::Rng + ?Sized>(rng: &mut R) -> Self {
         let secp = Secp256k1::new();
@@ -31,7 +31,7 @@ impl PrivateKeySigner {
 }
 
 #[async_trait]
-impl Signer for PrivateKeySigner {
+impl Sign for Signer {
     type Error = Infallible;
 
     async fn sign_digest(
@@ -58,7 +58,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_signer_sign_and_verify() {
-        let signer = PrivateKeySigner::random(&mut thread_rng());
+        let signer = Signer::random(&mut thread_rng());
         let public_key = signer.public_key();
 
         let message_bytes = b"Test message for local signer";
@@ -79,7 +79,7 @@ mod tests {
 
     #[test]
     fn test_local_signer_address() {
-        let signer = PrivateKeySigner::random(&mut thread_rng());
+        let signer = Signer::random(&mut thread_rng());
         let public_key = signer.public_key();
         let address = signer.public_key().address();
 

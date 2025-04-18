@@ -6,6 +6,7 @@
 mod tests {
     use std::{sync::Arc, time::Duration};
 
+    use crate::PrivateKeySigner;
     use crate::{
         client::BlobProvider,
         config::EigenConfig,
@@ -13,7 +14,6 @@ mod tests {
         test_eigenda_config, EigenClient,
     };
     use backon::{ConstantBuilder, Retryable};
-    use rust_eigenda_signers::PrivateKeySigner;
     use serial_test::serial;
 
     use crate::blob_info::BlobInfo;

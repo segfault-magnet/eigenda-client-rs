@@ -1,8 +1,8 @@
 use crate::errors::EigenClientError;
 
 use super::{config::EigenConfig, sdk::RawEigenClient};
+use crate::{PrivateKeySigner, Sign};
 use async_trait::async_trait;
-use rust_eigenda_signers::{PrivateKeySigner, Signer};
 use std::error::Error;
 use std::sync::Arc;
 
@@ -41,7 +41,7 @@ impl<S> EigenClient<S> {
     /// Dispatches a blob to the Eigen DA service
     pub async fn dispatch_blob(&self, data: Vec<u8>) -> Result<String, EigenClientError>
     where
-        S: Signer,
+        S: Sign,
     {
         let blob_id = self.client.dispatch_blob(data).await?;
 

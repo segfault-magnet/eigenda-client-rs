@@ -1,4 +1,4 @@
-use rust_eigenda_signers::Signer;
+use rust_eigenda_signers::Sign;
 
 use crate::{
     cert_verifier::CertVerifier,
@@ -31,7 +31,7 @@ impl<S> PayloadDisperser<S> {
         payload_config: PayloadDisperserConfig,
     ) -> Result<Self, PayloadDisperserError>
     where
-        S: Signer,
+        S: Sign,
     {
         let disperser_client = DisperserClient::new(disperser_config).await?;
         let cert_verifier = CertVerifier::new(
@@ -53,7 +53,7 @@ impl<S> PayloadDisperser<S> {
         payload: Payload,
     ) -> Result<BlobKey, PayloadDisperserError>
     where
-        S: Signer,
+        S: Sign,
     {
         let blob = payload.to_blob(self.config.polynomial_form)?;
 
@@ -155,7 +155,7 @@ mod tests {
     };
 
     use dotenv::dotenv;
-    use rust_eigenda_signers::PrivateKeySigner;
+    use rust_eigenda_signers::signers::private_key::Signer as PrivateKeySigner;
     use std::env;
 
     #[ignore = "depends on external RPC"]
