@@ -5,7 +5,6 @@ members = [
   "crates/rust-eigenda-client",
   "crates/rust-eigenda-signers",
   "crates/rust-eigenda-v2-client",
-  "e2e_tests",
 ]
 
 [workspace.package]
