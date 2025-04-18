@@ -2,27 +2,24 @@ use std::convert::Infallible;
 
 use crate::{PublicKey, RecoverableSignature, Sign};
 use async_trait::async_trait;
-use secp256k1::{Message, Secp256k1, SecretKey};
+use secp256k1::{Message, SecretKey, SECP256K1};
 
 /// A signer that uses a local private key stored in memory.
 #[derive(Clone, Debug)] // Deriving Debug is fine here as SecretKey has a safe Debug impl
 pub struct Signer {
     secret_key: SecretKey,
-    secp: Secp256k1<secp256k1::All>,
 }
 
 impl Signer {
     /// Creates a new signer with a randomly generated private key.
     pub fn random<R: rand::Rng + ?Sized>(rng: &mut R) -> Self {
-        let secp = Secp256k1::new();
-        let (secret_key, _) = secp.generate_keypair(rng);
-        Self { secret_key, secp }
+        let (secret_key, _) = SECP256K1.generate_keypair(rng);
+        Self { secret_key }
     }
 
     /// Creates a new signer from an existing secret key.
     pub fn new(secret_key: SecretKey) -> Self {
-        let secp = Secp256k1::new();
-        Self { secret_key, secp }
+        Self { secret_key }
     }
 
     pub fn secret_key(&self) -> SecretKey {
@@ -38,12 +35,12 @@ impl Sign for Signer {
         &self,
         message: &Message,
     ) -> Result<RecoverableSignature, Self::Error> {
-        let sig = self.secp.sign_ecdsa_recoverable(message, &self.secret_key);
+        let sig = SECP256K1.sign_ecdsa_recoverable(message, &self.secret_key);
         Ok(sig.into())
     }
 
     fn public_key(&self) -> PublicKey {
-        secp256k1::PublicKey::from_secret_key(&self.secp, &self.secret_key).into()
+        secp256k1::PublicKey::from_secret_key(SECP256K1, &self.secret_key).into()
     }
 }
 
@@ -72,8 +69,7 @@ mod tests {
             signer.sign_digest(&message).await.expect("Signing failed");
 
         // then
-        let secp = Secp256k1::new();
-        let recovered_pk = secp
+        let recovered_pk = SECP256K1
             .recover_ecdsa(&message, &recoverable_sig.0)
             .expect("Recovery failed");
 
